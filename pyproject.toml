@@ -1,0 +1,15 @@
+[project]
+name = "aml-project"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "ipykernel>=7.2.0",
+    "kagglehub>=1.0.0",
+    "matplotlib>=3.10.8",
+    "numpy>=2.4.3",
+    "pandas>=3.0.1",
+    "pip>=26.0.1",
+    "statsmodels>=0.14.6",
+]
