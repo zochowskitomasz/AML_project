@@ -13,11 +13,47 @@
 
 \section{Introduction}
 
-\textcolor{red}{something about importance of dealing with unlabeled data}
+% \textcolor{red}{something about importance of dealing with unlabeled data}
 
-\textcolor{blue}{idk it kinda sounds like an abstract}
-Our goal was to evaluate different techniques related to filling missing labels in data. Firstly, we prepared datasets for logistic regression and created new target columns according to various missing data schemes. Then, we implememted the FISTA algorithm which we used in Logistic Lasso Regression. Finally, we used different label infering methods to reconstruct original labels and compared the quality of classification between these methods as well as the Naive approach and the Oracle approach.
+% \textcolor{blue}{idk it kinda sounds like an abstract}
+% Our goal was to evaluate different techniques related to filling missing labels in data. 
+% Firstly, we prepared datasets for logistic regression and created new target columns according to various missing data schemes. 
+% Then, we implememted the FISTA algorithm which we used in Logistic Lasso Regression. 
+% Finally, we used different label infering methods to reconstruct original labels and compared the quality of classification between these methods as well as the Naive approach and the Oracle approach.
 
+
+When obtaining data, it is not uncommon for some parts of it to go missing. An interesting case is when it happens specifically to the labels.
+In this project, we focus on such scenarios. We take into account four distinct options, when the labels missing are:
+
+\begin{enumerate}
+    \item fully random,
+    \item dependent on a feature,
+    \item dependent on all features,
+    \item dependent on all features and the label itself.
+\end{enumerate}
+
+It is important to evaluate how to handle such cases, detect dependence (if such exists), and fill the missing data
+back in. 
+
+In this project we use different approaches to filling missing labels. First, a logistic regression with a new target column.
+Then, the FISTA algorithm and a Logistic Lasso Regression model. Lastly, various label infering methods used to reconstruct
+original labels. The quality of classification between these methods is compared, as well as with the Naive and Oracle approaches.
+
+\section{Datasets selection and cleanup}
+After careful consideration we've selected the following four datasets:
+\begin{enumerate}
+    \item Shopping habits of people who shop in store vs. people who shop online,
+    \item blood donation based on medical history,
+    \item phone battery condition and suggested approach,
+    \item wine quality data.
+\end{enumerate}
+
+In these four we predict where someone shops, if someone decided to donate blood, whether a phone needs its battery changed, and if 
+a specific wine is of good quality, respectively.
+
+All four datasets underwent a cleanup process. Luckily none of them had any NaNs (or None cells), and only one had any duplicates.
+The target features were cast to binary (some of them were multivariate, others binary labels defined by strings).
+Finally some discrete string features were cast to integers. All this has been done with a few helper functions and pandas's \verb|info()| method.
 
 \section{Optimization with FISTA}
 
