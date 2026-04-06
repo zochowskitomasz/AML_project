@@ -1,6 +1,6 @@
 import numpy as np
 
-def FISTA(X, y, bet, lam, iterations=500):
+def FISTA(X, y, lam, bet, iterations=500):
     def ST(B, lam):
         n = len(B)
         S = [0 for i in range(n)]
@@ -37,7 +37,7 @@ def FISTA(X, y, bet, lam, iterations=500):
 
         while True:
             tk = 0.1 * tk
-            bk = ST(v + (tk * X) @ (y - X*v), lam * tk)
+            bk = ST(v + tk * Dg(v), lam * tk)
 
             if g(bk) <= g(v) + Dg(v).T @ (bk - v) + 1/(2*tk) * np.linalg.norm(bk - v, ord=2)**2:
                 break
