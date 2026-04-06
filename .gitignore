@@ -1,6 +1,11 @@
+__pycache__
+.venv
+
 # LaTeX
 *.aux
 *.synctex*
 *.log
 *.toc
 *.pdf
+*.fdb_latexmk
+*.fls

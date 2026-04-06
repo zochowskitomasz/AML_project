@@ -11,5 +11,6 @@ dependencies = [
     "numpy>=2.4.3",
     "pandas>=3.0.1",
     "pip>=26.0.1",
+    "scikit-learn>=1.8.0",
     "statsmodels>=0.14.6",
 ]
