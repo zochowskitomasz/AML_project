@@ -3,7 +3,7 @@ import numpy as np
 def FISTA(X, y, lam, bet, iterations=500):
     def ST(B, lam):
         n = len(B)
-        S = [0 for i in range(n)]
+        S = np.zeros((n, 1))
 
         for i in range(n):
             if B[i] > lam:
@@ -19,6 +19,9 @@ def FISTA(X, y, lam, bet, iterations=500):
 
     def Dg(b):
         return X @ (X @ b - y)
+
+    X = np.array(X)
+    y = np.array(y).reshape(-1, 1)
 
     bk = bet
     bkt = bet
@@ -43,7 +46,7 @@ def FISTA(X, y, lam, bet, iterations=500):
                 break
         
         tk = tk / 0.1
-        bk = ST(v + (tk * X.T) @ (y - X*v), lam * tk)
+        bk = ST(v + (tk * X.T) @ (y - X @ v), lam * tk)
         tkt = tk
 
 
