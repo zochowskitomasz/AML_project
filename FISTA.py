@@ -18,7 +18,7 @@ def FISTA(X, y, lam, bet, iterations=500):
         return 1/2 * (np.linalg.norm(y - X @ b, ord=2)**2)
 
     def Dg(b):
-        return X.T @ (X @ b - y)
+        return X @ (X @ b - y)
 
     bk = bet
     bkt = bet
