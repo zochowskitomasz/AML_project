@@ -38,13 +38,17 @@ class UnlabeledLogReg:
             case "knn":
                 knn = KNeighborsClassifier()
                 knn.fit(X[y != -1], y[y != -1])
-                y_filled = knn.predict(X)
-                self.logreg.fit(X, y_filled)
+                y_imputed = knn.predict(X[y != -1]) 
+                y_all = y.copy()
+                y_all[y_all == -1] = y_imputed
+                self.logreg.fit(X, y_all)
             case "lda":
                 lda = LinearDiscriminantAnalysis()
                 lda.fit(X[y != -1], y[y != -1])
-                y_filled = lda.predict(X)
-                self.logreg.fit(X, y_filled)
+                y_imputed = lda.predict(X[y != -1]) 
+                y_all = y.copy()
+                y_all[y_all == -1] = y_imputed
+                self.logreg.fit(X, y_all)
             case _:
                 raise ValueError(f"Unknown method: {method}. Use one of following: 'naive', 'oracle', 'knn', 'lda'.")
     
