@@ -112,6 +112,8 @@ class LabeledLogReg:
         return np.sign(values) * np.maximum(np.abs(values) - threshold, 0.0)
 
     def _validate_X(self, X: Any, name: str) -> np.ndarray:
+        if isinstance(X, pd.DataFrame) and hasattr(self, "feature_names_in_"):
+            X = X.reindex(columns=self.feature_names_in_, fill_value=0)
         X = self._to_numpy(X)
         if X.ndim == 1:
             X = X.reshape(-1, 1)
@@ -132,6 +134,13 @@ class LabeledLogReg:
             raise ValueError(f"{name} must be numeric binary labels.") from exc
 
     def _prepare_X(self, X: Any, fit: bool = False) -> np.ndarray:
+        is_dataframe = isinstance(X, pd.DataFrame)
+        if fit:
+            if is_dataframe:
+                self.feature_names_in_ = np.asarray(X.columns, dtype=object)
+            else:
+                self.feature_names_in_ = None
+
         X = self._validate_X(X, "X")
         if fit:
             self.n_features_in_ = X.shape[1]
