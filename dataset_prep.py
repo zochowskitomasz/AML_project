@@ -99,7 +99,7 @@ def get_dataset(name: str, p_mcar: float = 0.15, p_mar: list[float] = [0.9, 0.05
         p_mnar (list[float]): A list of 4 probabilities for the MNAR scheme. They correspond to: chosen decile in class 1, remaining deciles in class 1, chosen decile in class 0, and remaining deciles in class 0, respectively.
         
     Returns:
-        tuple[pandas.DataFrame, pandas.DataFrame]: A tuple of (train DataFrame, test DataFrame). The train DataFrame contains columns with removed labels, while the test DataFrame is left unchanged.
+        tuple[pandas.DataFrame, pandas.DataFrame]: A tuple of (train DataFrame, val DataFrame, test DataFrame). The train DataFrame contains columns with removed labels, while the val and test DataFrames are left unchanged.
     """
 
     # Dataset downloading, reading, preprocessing
@@ -131,6 +131,10 @@ def get_dataset(name: str, p_mcar: float = 0.15, p_mar: list[float] = [0.9, 0.05
             data["quality"] = data["quality"].map(lambda x: 1 if x > 5 else 0)
         case _:
             raise ValueError(f"Unknown dataset name: {name}. Accepted values are: 'shopping', 'smartphone', 'software', and 'wine'.")
+    
+    # Standarization
+    data = data.astype(float)
+    data.iloc[:, :-1] = (data.iloc[:, :-1] - data.iloc[:, :-1].mean())/data.iloc[:, :-1].std()
 
     # Split
     data_train, data_val_test = train_test_split(data, test_size=0.5, random_state=RANDOM_SEED)
