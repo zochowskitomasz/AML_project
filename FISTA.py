@@ -6,11 +6,11 @@ def FISTA(X, y, lam, bet, iterations=500):
         S = np.zeros((n, 1))
 
         for i in range(n):
-            if B[i] > lam:
-                S[i] = B[i] - lam
+            if B[i][0] > lam:
+                S[i][0] = B[i][0] - lam
 
-            elif B[i] < -lam:
-                S[i] = B[i] + lam
+            elif B[i][0] < -lam:
+                S[i][0] = B[i][0] + lam
 
         return S
     
@@ -18,7 +18,7 @@ def FISTA(X, y, lam, bet, iterations=500):
         return 1/2 * (np.linalg.norm(y - X @ b, ord=2)**2)
 
     def Dg(b):
-        return X @ (X @ b - y)
+        return X.T @ (y - X @ b)
 
     X = np.array(X)
     y = np.array(y).reshape(-1, 1)
