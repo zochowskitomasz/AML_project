@@ -1,15 +1,17 @@
 import numpy as np
 
-def FISTA(X, y, lam, bet, iterations=500):
-    def ST(B, l):
+def FISTA(X, y, lam, bet, iterations=500, fit_intercept=True):
+    def ST(B, lam):
+        S = np.zeros_like(B)
         n = len(B)
-        S = np.zeros((n, 1))
 
         for i in range(n):
-            if B[i] > l:
-                S[i] = B[i] - l
-            elif B[i] < -l:
-                S[i] = B[i] + l
+            if fit_intercept and i == n - 1:
+                S[i] = B[i]
+            elif B[i] > lam:
+                S[i] = B[i] - lam
+            elif B[i] < -lam:
+                S[i] = B[i] + lam
 
         return S
     
@@ -21,6 +23,17 @@ def FISTA(X, y, lam, bet, iterations=500):
 
     X = np.array(X)
     y = np.array(y).reshape(-1, 1)
+
+    if fit_intercept:
+        X = np.column_stack([X, np.ones((X.shape[0], 1))])
+
+    bet = np.array(bet)
+    if bet.ndim == 1:
+        bet = bet.reshape(-1, 1)
+    if fit_intercept and bet.shape[0] == X.shape[1] - 1:
+        bet = np.vstack([bet, np.zeros((1, 1))])
+    elif bet.shape[0] != X.shape[1]:
+        raise ValueError("bet must have one entry per feature, or one fewer when fit_intercept=True.")
 
     bk = bet
     bkt = bet
@@ -41,4 +54,6 @@ def FISTA(X, y, lam, bet, iterations=500):
             else:
                 tk = 0.9 * tk
 
+    if fit_intercept:
+        return bk[:-1], bk[-1]
     return bk
