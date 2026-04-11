@@ -1,16 +1,15 @@
 import numpy as np
 
 def FISTA(X, y, lam, bet, iterations=500):
-    def ST(B, lam):
+    def ST(B, l):
         n = len(B)
         S = np.zeros((n, 1))
 
         for i in range(n):
-            if B[i] > lam:
-                S[i] = B[i] - lam
-
-            elif B[i] < -lam:
-                S[i] = B[i] + lam
+            if B[i] > l:
+                S[i] = B[i] - l
+            elif B[i] < -l:
+                S[i] = B[i] + l
 
         return S
     
@@ -18,7 +17,7 @@ def FISTA(X, y, lam, bet, iterations=500):
         return 1/2 * (np.linalg.norm(y - X @ b, ord=2)**2)
 
     def Dg(b):
-        return X.T @ (X @ b - y)
+        return - X.T @ (y - X @ b)
 
     X = np.array(X)
     y = np.array(y).reshape(-1, 1)
@@ -35,16 +34,11 @@ def FISTA(X, y, lam, bet, iterations=500):
         bkt = bk
 
         while True:
-            tk = 0.9 * tk
-            bk = ST(v + tk * Dg(v), lam * tk)
+            bk = ST(v - tk * Dg(v), lam * tk)
 
             if g(bk) <= g(v) + Dg(v).T @ (bk - v) + 1/(2*tk) * np.linalg.norm(bk - v, ord=2)**2:
                 break
-        
-        bk = ST(v + (tk * X.T) @ (y - X @ v), lam * tk)
-
-        if tk < 1e-10:
-            break
-
+            else:
+                tk = 0.9 * tk
 
     return bk
