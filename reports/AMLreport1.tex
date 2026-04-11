@@ -10,6 +10,7 @@
 
 \maketitle
 \tableofcontents
+\newpage
 
 \section{Introduction}
 
@@ -22,8 +23,7 @@
 % Finally, we used different label infering methods to reconstruct original labels and compared the quality of classification between these methods as well as the Naive approach and the Oracle approach.
 
 
-When obtaining data, it is not uncommon for some parts of it to go missing. An interesting case is when it happens specifically to the labels.
-In this project, we focus on such scenarios. We take into account four distinct options, when the labels missing are:
+When obtaining data, it is not uncommon for some parts of it to go missing. An interesting case is when it happens specifically to the labels. In this project, we focus on such scenarios. We take into account four distinct options, when the labels missing are:
 
 \begin{enumerate}
     \item fully random,
@@ -32,38 +32,82 @@ In this project, we focus on such scenarios. We take into account four distinct 
     \item dependent on all features and the label itself.
 \end{enumerate}
 
-It is important to evaluate how to handle such cases, detect dependence (if such exists), and fill the missing data
-back in. 
+It is important to evaluate how to handle such cases, detect dependence (if such exists), and fill the missing data back in. 
 
-In this project we use different approaches to filling missing labels. First, a logistic regression with a new target column.
-Then, the FISTA algorithm and a Logistic Lasso Regression model. Lastly, various label infering methods used to reconstruct
-original labels. The quality of classification between these methods is compared, as well as with the Naive and Oracle approaches.
+In this project we inspect the performance of two label infering methods and compare them with the naive method (removing all unlabeled observations) and the oracle method (an optimistic case in which no labels are missing) in all four missing label scenarios. Then, we fit our own implementation of logistic regression with Lasso (using FISTA optimizer) and \verb|sklearn|'s \verb|LogisticRegression| with L1 penalty and compare the results.
+
+% In this project we use different approaches to filling missing labels. First, a logistic regression with a new target column.
+% Then, the FISTA algorithm and a Logistic Lasso Regression model. Lastly, various label infering methods used to reconstruct
+% original labels. The quality of classification between these methods is compared, as well as with the Naive and Oracle approaches.
 
 \section{Datasets selection and cleanup}
+
 After careful consideration we've selected the following four datasets:
+
 \begin{enumerate}
     \item Shopping habits of people who shop in store vs. people who shop online,
-    \item blood donation based on medical history,
     \item phone battery condition and suggested approach,
+    \item software quality prediction based on its properties,
     \item wine quality data.
 \end{enumerate}
 
-In these four we predict where someone shops, if someone decided to donate blood, whether a phone needs its battery changed, and if 
-a specific wine is of good quality, respectively.
+In these four we predict where someone shops, whether a phone needs its battery changed, if a piece of code is defective, and if a specific wine is of good quality, respectively.
 
-All four datasets underwent a cleanup process. Luckily none of them had any NaNs (or None cells), and only one had any duplicates.
-The target features were cast to binary (some of them were multivariate, others binary labels defined by strings).
-Finally some discrete string features were cast to integers. All this has been done with a few helper functions and pandas's \verb|info()| method.
+All four datasets underwent a cleanup process. Luckily none of them had any NaNs (or None cells) nor duplicated records. The target features were cast to binary (some of them were multivariate, others binary labels defined by strings). Finally some discrete string features were cast to integers. All this has been done with a few helper functions and \verb|pandas|'s \verb|info()| method.
 
 \section{Optimization with FISTA}
 
-\textcolor{red}{Found the link to the paper which introduces FISTA: https://www.ceremade.dauphine.fr/~carlier/FISTA}
+% \textcolor{red}{Found the link to the paper which introduces FISTA: https://www.ceremade.dauphine.fr/~carlier/FISTA}
 
+Fast Iterative Shrinkage-Thresholding Algorithm (FISTA in short) has been proposed in 2009 as a way to minimize functions of form $f = g + h$, where $g$ is a smooth convex function and $h$ is a continuous, but not necessarily smooth, convex function \cite{fista}. In the case of Lasso, the loss function has the form of
+
+$$F(x) = \|y - x^T \beta\|^2_2 + \lambda\|\beta\|_1,$$
+
+where $\lambda > 0$. It is a known fact that $\|\cdot\|_1$ is continuous, convex, and non-smooth, which fits into FISTA assumptions.
+
+Our implementation of the FISTA algorithm for Lasso Regression is based on \cite{fista_algo} and combines acceleration as well as backtracking to achieve quick convergence. There are a few key parts of our implementation which are worth discussing.
+
+The soft-thresholding function \verb|ST| can be expressed using a following formula:
+
+$$\textrm{ST}_l(\beta) = \textrm{sgn}(\beta) \max\{|B| - l, 0\}$$
+
+Intuitively, it takes a vector $\beta$ and reduces the absolute value of each coordinate by a maximum of $l$. This is a special case of proximal mapping, which, more generally, allows to minimize $f$ easily while . Additionally, we have defined two helper functions \verb|g| and \verb|Dg| corresponding to $g$ and $\nabla g$, respectively.
+
+In the $k$-th iteration, firstly, an accelerated parameter vector $v$ is calculated using the following formula:
+
+$v = \beta_{k-1} + \frac{k-2}{k+1}(\beta_{k-1} - \beta_{k-2}).$
+
+Next, we perform backtracking. We start with step size $t_k = t_{k-1}$ ($t_0 = 1$), calculate the next step candidate $\beta_k = \textrm{ST}_{\lambda t_k}(v - t_k \nabla g (v))$ and check if it satisfies the inequality:
+
+$$g(\beta_k) > g(v) + \nabla g(v)^T (\beta_k - v) + \frac{1}{2t_k} \|\beta_k - v\|^2_2.$$
+
+If it does, we reduce the value of $t_k$ by multiplying it by a constant coefficient -- in our implementation, $0.9$; if it doesn't, we accept $\beta_k$ as the next step.
 
 \section{Labeling missing data}
 
+We have implemented two methods that focus on filling missing labels: Linear Discriminant Analysis and K Nearest Neighbors.
+
+\subsection{LDA}
+
+This approach is based on an assumption that data belonging to the same class should be close to each other. In other words, observations from each class should form a cluster. We assume that observations form two Gaussian clusters. Using labeled data, we estimate parameters of distributions: two mean vectors (one for each class) and the between group covariance matrix. Then we fill remaining labels by maximizing the posterior probability of a class given a set of features.
+
+Since LDA generates a linear decision boundary, we could replace it with a standard linear model which we would use to predict missing labels. On one hand, this approach would not require to make assumptions of gaussian distributions of data. On the other hand, however, generating labels from a linear model to fit a different linear model might reinforce inaccuracies of the first one, especially if label missingness depends or features or labels themselves.
+
+\subsection{KNN}
+
+Instead of predicting distributions of data for each class, we can look more locally, at the neighborhood of the point with a missing label. The reasoning behind this method is quite simple -- data with similar features should intuitively belong to the same class. 
+
+\textcolor{red}{something more?}
 
 \section{Results}
 
+
+\newpage
+\begin{thebibliography}{9}
+\bibitem{fista}
+A. Beck and M. Teboulle, “A Fast Iterative Shrinkage-Thresholding Algorithm for Linear Inverse Problems,” SIAM Journal on Imaging Sciences, vol. 2, no. 1, pp. 183–202, 2019, doi: https://doi.org/10.1137/080716542.
+\bibitem{fista_algo}
+R. Tibshirani, “Proximal Gradient Descent (and Acceleration)”, Convex Optimization lecture, Carnegie Mellon University, 
+\end{thebibliography}
 
 \end{document}
