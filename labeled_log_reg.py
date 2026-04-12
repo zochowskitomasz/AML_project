@@ -154,7 +154,9 @@ class LabeledLogReg:
         if self.lambda_grid is not None:
             return np.unique(np.sort(self.lambda_grid)[::-1])
 
-        centered_response = y_binary - y_binary.mean()
+        positive_rate = float(np.clip(y_binary.mean(), 1e-8, 1.0 - 1e-8))
+        intercept_only = np.full((X.shape[0], 1), positive_rate, dtype=float)
+        centered_response = intercept_only - y_binary.reshape(-1, 1)
         lambda_max = np.max(np.abs(X.T @ centered_response)) / max(X.shape[0], 1)
         if not np.isfinite(lambda_max) or lambda_max <= 0.0:
             lambda_max = 1.0
