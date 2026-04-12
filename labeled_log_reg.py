@@ -2,12 +2,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
-import warnings
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import (
     average_precision_score,
     balanced_accuracy_score,
@@ -17,21 +15,22 @@ from sklearn.metrics import (
     roc_auc_score,
 )
 
+import FISTA
+
 
 @dataclass
-class _LambdaModel:
+class _LambdaResult:
     lambda_value: float
     coef: np.ndarray
     intercept: float
-    estimator: LogisticRegression | None = None
 
 
 class LabeledLogReg:
-    """Logistic Lasso regression with a FISTA path or sklearn baseline.
+    """Logistic regression wrapper that selects lambda by validation.
 
-    The class fits a sequence of models over a lambda grid on the training set,
-    then selects the best lambda on the validation set using the requested
-    metric.
+    This version keeps the implementation intentionally small: coefficients are
+    obtained from the shared `FISTA.FISTA` function, while this class handles
+    data validation, lambda search, scoring, prediction, and plotting.
     """
 
     _METRIC_ALIASES = {
@@ -60,25 +59,18 @@ class LabeledLogReg:
         lambda_grid: np.ndarray | list[float] | None = None,
         n_lambdas: int = 30,
         lambda_min_ratio: float = 1e-3,
-        max_iter: int = 1000,
-        tol: float = 1e-6,
+        max_iter: int = 500,
         standardize: bool = True,
-        random_state: int | None = 42,
     ) -> None:
         implementation = implementation.lower().strip()
-        if implementation not in {"fista", "sklearn"}:
-            raise ValueError("implementation must be either 'fista' or 'sklearn'.")
-
-        if lambda_grid is not None and n_lambdas < 1:
-            raise ValueError("n_lambdas must be at least 1.")
-
+        if implementation != "fista":
+            raise ValueError("Only implementation='fista' is supported here. Use sklearn directly in the notebook for comparison.")
         if lambda_grid is not None:
             lambda_grid = np.asarray(lambda_grid, dtype=float).ravel()
             if lambda_grid.size == 0:
                 raise ValueError("lambda_grid must not be empty.")
             if np.any(lambda_grid <= 0):
                 raise ValueError("lambda values must be strictly positive.")
-
         if n_lambdas < 1:
             raise ValueError("n_lambdas must be at least 1.")
         if not (0.0 < lambda_min_ratio <= 1.0):
@@ -89,9 +81,7 @@ class LabeledLogReg:
         self.n_lambdas = n_lambdas
         self.lambda_min_ratio = lambda_min_ratio
         self.max_iter = max_iter
-        self.tol = tol
         self.standardize = standardize
-        self.random_state = random_state
 
         self.is_fitted_ = False
         self.is_validated_ = False
@@ -99,17 +89,13 @@ class LabeledLogReg:
         self.best_lambda_: float | None = None
         self.best_validation_score_: float | None = None
         self.validation_history_: dict[str, np.ndarray] = {}
-        self.models_: list[_LambdaModel] = []
+        self.models_: list[_LambdaResult] = []
 
     @staticmethod
     def _to_numpy(array: Any) -> np.ndarray:
         if isinstance(array, (pd.Series, pd.DataFrame)):
             return array.to_numpy()
         return np.asarray(array)
-
-    @staticmethod
-    def _soft_threshold(values: np.ndarray, threshold: float) -> np.ndarray:
-        return np.sign(values) * np.maximum(np.abs(values) - threshold, 0.0)
 
     def _validate_X(self, X: Any, name: str) -> np.ndarray:
         if isinstance(X, pd.DataFrame) and hasattr(self, "feature_names_in_"):
@@ -134,12 +120,10 @@ class LabeledLogReg:
             raise ValueError(f"{name} must be numeric binary labels.") from exc
 
     def _prepare_X(self, X: Any, fit: bool = False) -> np.ndarray:
-        is_dataframe = isinstance(X, pd.DataFrame)
-        if fit:
-            if is_dataframe:
-                self.feature_names_in_ = np.asarray(X.columns, dtype=object)
-            else:
-                self.feature_names_in_ = None
+        if fit and isinstance(X, pd.DataFrame):
+            self.feature_names_in_ = np.asarray(X.columns, dtype=object)
+        elif fit:
+            self.feature_names_in_ = None
 
         X = self._validate_X(X, "X")
         if fit:
@@ -170,12 +154,10 @@ class LabeledLogReg:
         if self.lambda_grid is not None:
             return np.unique(np.sort(self.lambda_grid)[::-1])
 
-        positive_rate = float(y_binary.mean())
-        if positive_rate <= 0.0 or positive_rate >= 1.0:
-            raise ValueError("Both classes must be present in the training data.")
-
-        residual = positive_rate - y_binary
-        lambda_max = np.max(np.abs(X.T @ residual)) / X.shape[0]
+        positive_rate = float(np.clip(y_binary.mean(), 1e-8, 1.0 - 1e-8))
+        intercept_only = np.full((X.shape[0], 1), positive_rate, dtype=float)
+        centered_response = intercept_only - y_binary.reshape(-1, 1)
+        lambda_max = np.max(np.abs(X.T @ centered_response)) / max(X.shape[0], 1)
         if not np.isfinite(lambda_max) or lambda_max <= 0.0:
             lambda_max = 1.0
 
@@ -184,99 +166,6 @@ class LabeledLogReg:
         grid = np.unique(np.asarray(grid, dtype=float))
         return grid[::-1] if grid[0] < grid[-1] else grid
 
-    def _fit_fista_single(
-        self,
-        X: np.ndarray,
-        y: np.ndarray,
-        lambda_value: float,
-        step_size: float,
-        warm_start: np.ndarray | None = None,
-    ) -> tuple[np.ndarray, float]:
-        n_samples, n_features = X.shape
-        X_aug = np.column_stack([X, np.ones(n_samples)])
-
-        if warm_start is None:
-            theta = np.zeros(n_features + 1, dtype=float)
-        else:
-            theta = warm_start.astype(float, copy=True)
-
-        z = theta.copy()
-        t = 1.0
-
-        for _ in range(self.max_iter):
-            logits = X_aug @ z
-            probabilities = 1.0 / (1.0 + np.exp(-np.clip(logits, -50.0, 50.0)))
-            gradient = (X_aug.T @ (probabilities - y)) / n_samples
-
-            candidate = z - step_size * gradient
-            next_theta = candidate.copy()
-            next_theta[:-1] = self._soft_threshold(candidate[:-1], lambda_value * step_size)
-
-            difference = next_theta - theta
-            if np.linalg.norm(difference) <= self.tol * (1.0 + np.linalg.norm(theta)):
-                theta = next_theta
-                break
-
-            next_t = 0.5 * (1.0 + np.sqrt(1.0 + 4.0 * t * t))
-            z = next_theta + ((t - 1.0) / next_t) * (next_theta - theta)
-            theta = next_theta
-            t = next_t
-
-        return theta[:-1], float(theta[-1])
-
-    def _fit_fista_path(self, X: np.ndarray, y: np.ndarray) -> list[_LambdaModel]:
-        X_aug = np.column_stack([X, np.ones(X.shape[0])])
-        spectral_norm = np.linalg.norm(X_aug, ord=2)
-        lipschitz = (spectral_norm * spectral_norm) / (4.0 * X.shape[0])
-        step_size = 1.0 / max(lipschitz, 1e-12)
-
-        models: list[_LambdaModel] = []
-        warm_start: np.ndarray | None = None
-
-        for lambda_value in self.lambdas_:
-            coef, intercept = self._fit_fista_single(
-                X,
-                y,
-                lambda_value=lambda_value,
-                step_size=step_size,
-                warm_start=warm_start,
-            )
-            warm_start = np.concatenate([coef, [intercept]])
-            models.append(_LambdaModel(lambda_value=lambda_value, coef=coef, intercept=intercept))
-
-        return models
-
-    def _fit_sklearn_path(self, X: np.ndarray, y: np.ndarray) -> list[_LambdaModel]:
-        models: list[_LambdaModel] = []
-
-        for lambda_value in self.lambdas_:
-            C = 1.0 / lambda_value
-            estimator = LogisticRegression(
-                penalty="l1",
-                solver="liblinear",
-                C=C,
-                fit_intercept=True,
-                max_iter=self.max_iter,
-                tol=self.tol,
-                random_state=self.random_state,
-            )
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore", category=FutureWarning)
-                warnings.simplefilter("ignore", category=UserWarning)
-                estimator.fit(X, y)
-            coef = estimator.coef_.reshape(-1).astype(float, copy=True)
-            intercept = float(estimator.intercept_.reshape(-1)[0])
-            models.append(
-                _LambdaModel(
-                    lambda_value=lambda_value,
-                    coef=coef,
-                    intercept=intercept,
-                    estimator=estimator,
-                )
-            )
-
-        return models
-
     def fit(self, X_train: Any, y_train: Any) -> "LabeledLogReg":
         X = self._prepare_X(X_train, fit=True)
         y = self._validate_y(y_train, "y_train")
@@ -284,10 +173,20 @@ class LabeledLogReg:
 
         self.lambdas_ = self._resolve_lambda_grid(X, y_binary)
 
-        if self.implementation == "fista":
-            self.models_ = self._fit_fista_path(X, y_binary)
-        else:
-            self.models_ = self._fit_sklearn_path(X, y_binary)
+        self.models_ = []
+        warm_start = np.zeros((X.shape[1] + 1, 1), dtype=float)
+        for lambda_value in self.lambdas_:
+            coef, intercept = FISTA.FISTA(
+                X,
+                y_binary,
+                lam=float(lambda_value),
+                bet=warm_start,
+                iterations=self.max_iter,
+            )
+            coef = np.asarray(coef, dtype=float).reshape(-1)
+            intercept_value = float(np.asarray(intercept).reshape(-1)[0])
+            self.models_.append(_LambdaResult(lambda_value=float(lambda_value), coef=coef, intercept=intercept_value))
+            warm_start = np.concatenate([coef.reshape(-1, 1), np.array([[intercept_value]])], axis=0)
 
         self.is_fitted_ = True
         self.is_validated_ = False
@@ -303,7 +202,7 @@ class LabeledLogReg:
         normalized = normalized.replace(" ", "_")
         return self._METRIC_ALIASES.get(normalized, normalized)
 
-    def _predict_positive_proba_from_model(self, X: np.ndarray, model: _LambdaModel) -> np.ndarray:
+    def _predict_positive_proba_from_model(self, X: np.ndarray, model: _LambdaResult) -> np.ndarray:
         logits = X @ model.coef + model.intercept
         return 1.0 / (1.0 + np.exp(-np.clip(logits, -50.0, 50.0)))
 
@@ -325,9 +224,7 @@ class LabeledLogReg:
             return float(roc_auc_score(y_true, proba))
         if measure == "average_precision":
             if np.unique(y_true).size < 2:
-                raise ValueError(
-                    "area under the sensitivity-precision curve requires both classes to be present in the validation data."
-                )
+                raise ValueError("area under the sensitivity-precision curve requires both classes to be present in the validation data.")
             return float(average_precision_score(y_true, proba))
 
         raise ValueError(
@@ -342,8 +239,8 @@ class LabeledLogReg:
         y = self._validate_y(y_valid, "y_valid")
         y_binary = (y == self.positive_class_).astype(int)
 
-        allowed_classes = np.unique(np.concatenate([self.classes_, np.unique(y)]))
-        if np.unique(allowed_classes).size > 2:
+        valid_classes = np.unique(y)
+        if valid_classes.size != 2 or set(valid_classes.tolist()) != set(self.classes_.tolist()):
             raise ValueError("y_valid must use the same two classes as y_train.")
 
         normalized_measure = self._normalize_metric_name(measure)
