@@ -82,6 +82,7 @@ def remove_labels(df: pd.DataFrame, target: str, scheme: str, p_mcar: float = 0.
 
     is_missing = np.asarray(is_missing, dtype=bool)
     print(f"Percentage of labels removed: {is_missing.mean()*100:.2f}%")
+    print(f"percentages: {p_mcar if scheme == 'mcar' else (p_mar if scheme in ['mar1', 'mar2'] else p_mnar)}")
 
     df[target + "_" + scheme] = df[target]
     df.loc[is_missing, target + "_" + scheme] = -1
