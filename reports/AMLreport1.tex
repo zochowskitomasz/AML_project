@@ -4,6 +4,7 @@
 \usepackage{graphicx}
 \usepackage[toc,page]{appendix}
 \usepackage[section]{placeins}
+\usepackage[hidelinks]{hyperref}
 
 \title{Advanced Machine Learning\\Report 1}
 
@@ -56,7 +57,7 @@ After careful consideration we've selected the following four datasets:
 
 In these four we predict where someone shops, whether a phone needs its battery changed, if a piece of code is defective, and if a specific wine is of good quality, respectively.
 
-All four datasets underwent a cleanup process. Luckily none of them had any NaNs (or None cells) nor duplicated records. The target features were cast to binary (some of them were multivariate, others binary labels defined by strings). Finally some discrete string features were cast to integers. All this has been done with a few helper functions and \verb|pandas|'s \verb|info()| method.
+All four datasets underwent a cleanup process. We verified missing values and duplicates during data preparation. The target features were cast to binary (some of them were multivariate, others binary labels defined by strings). Finally some discrete string features were cast to integers. All this has been done with a few helper functions and \verb|pandas|'s \verb|info()| method.
 
 \section{Optimization with FISTA}
 
@@ -136,17 +137,15 @@ Lastly, it seems that no matter the label missingness scheme, we achieved simila
 
 \section{Conclusions}
 
-In this project, we addressed binary classification with missing labels by combining three components: (i) data preparation and simulation of four missingness mechanisms (MCAR, MAR1, MAR2, MNAR), (ii) our own implementation of logistic Lasso regression optimized with FISTA, and (iii) a two-method label completion framework (LDA and KNN) wrapped in \verb|UnlabeledLogReg| and compared against Naive and Oracle baselines.
+In this project, we studied binary classification with missing labels by combining four missingness schemes (MCAR, MAR1, MAR2, MNAR), our FISTA-based logistic Lasso implementation, and two label completion methods (LDA and KNN) within \verb|UnlabeledLogReg|.
 
-From the optimization perspective, our FISTA implementation produced coefficient paths and validation behavior qualitatively consistent with \verb|sklearn| logistic regression with L1 penalty, which supports the correctness of the implementation. The main observed difference was a shift in regularization strength at which shrinkage occurred, suggesting that while both approaches recover similar trends, practical model selection remains sensitive to scaling, stopping criteria, and parameterization details.
+Our FISTA implementation produced coefficient and validation trends similar to \verb|sklearn| with L1 regularization, which supports its correctness. The main practical difference was a shift in the regularization level where shrinkage became visible.
 
-From the missing-label perspective, the expected strong dominance of Oracle over the remaining methods was not consistently observed in the wine experiments. Across MCAR, MAR1, and MAR2, all approaches often yielded similar F1 values, and only MNAR showed a clearer degradation trend for non-Oracle methods as the missingness level increased. This indicates that for this dataset and feature space, moderate label incompleteness can be partially compensated by the available covariate information and by simple completion rules.
+In the missing-label experiments on wine data, Oracle did not always clearly dominate under MCAR/MAR settings, while MNAR showed the most visible performance drop for non-Oracle approaches. This suggests that moderate missingness can often be mitigated, but MNAR remains the most difficult scenario.
 
-Comparing the two completion strategies, no single method dominated in every setting. This confirms that the quality of label imputation is mechanism-dependent: local neighborhood assumptions (KNN) and distributional assumptions (LDA) may each be beneficial depending on the geometry of the data. Therefore, treating imputation as a tunable modeling choice, rather than a fixed preprocessing step, is important in practice.
+Neither LDA nor KNN was uniformly best across all settings, so the imputation strategy should be treated as a tunable component. Overall, the project goals were achieved: implementation of FISTA logistic Lasso, development of two missing-label handling methods, and comparative evaluation against Naive and Oracle baselines.
 
-An important limitation is that some observed trajectories (especially for the software dataset) were difficult to interpret, including degenerate predictions in both our and \verb|sklearn| implementations despite reasonable coefficient profiles. This suggests potential class imbalance or split-specific effects and motivates additional robustness checks (repeated splits, class-balanced resampling, and threshold analysis) in future work.
-
-Overall, the project objectives were achieved: we implemented and validated FISTA-based logistic Lasso, proposed and tested two methods for handling missing labels, and performed comparative experiments under four missingness schemes and multiple missingness levels. The key practical conclusion is that the impact of missing labels is highly context dependent; in some regimes, simple completion methods can approach Oracle-level utility, while in MNAR scenarios careful modeling of the missingness mechanism becomes substantially more important.
+To ensure reproducibility, detailed environment setup and execution instructions are provided in the repository README file.
 
 \newpage
 \begin{thebibliography}{9}
