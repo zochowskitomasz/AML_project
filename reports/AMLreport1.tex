@@ -1,6 +1,8 @@
 \documentclass{article}
 \usepackage[english]{babel}
 \usepackage{xcolor}
+\usepackage{graphicx}
+\usepackage[toc,page]{appendix}
 
 \title{Advanced Machine Learning\\Report 1}
 
@@ -101,12 +103,31 @@ Since LDA generates a linear decision boundary, we could replace it with a stand
 
 \subsection{KNN}
 
-Instead of predicting distributions of data for each class, we can look more locally, at the neighborhood of the point with a missing label. The reasoning behind this method is quite simple -- data with similar features should intuitively belong to the same class. 
+Instead of predicting distributions of data for each class, we can look more locally, at the neighborhood of the point with a missing label. The reasoning behind this method is quite simple -- data with similar features should intuitively belong to the same class.
 
-\textcolor{red}{something more?}
+We suspect that the quality of this solution may depend on the choice of the \verb|n_neighbors| parameter which, in turn, might be different for each dataset. Nevertheless, we decided to use the default value of 5 to simplify the solution.
 
 \section{Results}
 
+In this section, we show the results of our experiments and provide commentary.
+
+\subsection{Comparison with sklearn}
+
+Firstly, we compared our implementation of Lasso Logistic Regression with \verb|LogisticRegression| implemented in \verb|sklearn| by plotting profile plots and F1 plots for both classes. We selected a range of $\lambda$ parameters individually for each dataset. Then, we fit models for each $\lambda$ using unremoved labels. The results are shown in Figures \ref{fista_sklearn_shopping}, \ref{fista_sklearn_smartphone}, \ref{fista_sklearn_software} and \ref{fista_sklearn_wine} in Appendix \ref{figures}.
+
+In profile plots, we can see that parameter trajectories are similar, although shifted, for both implementations. It is worth noting that our FISTA implementation shrinks parameters quicker (with respect to $\lambda$) than \verb|sklearn|'s. Additionally, there is some unexpected behavior in case of shopping and software datasets -- the parameter values seem to be shrunk for small lambdas. Nevertheless, these results are quite satisfying.
+
+Plots of F1 scores mostly behave in an expected manner -- if we compare implementations, the trajectories of the measure for different splits are similar, although shifted -- just like in profile plots.
+
+The notable exception is the software dataset, for which the F1 measure is constant and equal to 0 along all splits and implementations. As it turned out, both logistic regression models predicted all labels as 0. We inspected the split (especially the prior probabilities of each class in each sample), performed it with a different seed and looked at different lambda parameters and did not find a reason for this behavior. Despite this, we still decided to include it in the report, since the profile plot itself looks sensible and aids us in drawing conclusions.
+
+\section{Conclusions}
+
+% something about how fista is great
+
+% something about the quality of our implementations
+
+% something about why metrics may not change
 
 \newpage
 \begin{thebibliography}{9}
@@ -115,5 +136,45 @@ A. Beck and M. Teboulle, “A Fast Iterative Shrinkage-Thresholding Algorithm fo
 \bibitem{fista_algo}
 R. Tibshirani, “Proximal Gradient Descent (and Acceleration)”, Convex Optimization lecture, Carnegie Mellon University, 
 \end{thebibliography}
+
+\newpage
+\begin{appendices}
+
+\section{Figures}
+\label{figures}
+
+\begin{figure}[!htb]
+    \centering
+    \includegraphics[width=0.8\linewidth]{../img/fista_vs_sklearn_profile_shopping.png}
+    \includegraphics[width=0.8\linewidth]{../img/fista_vs_sklearn_f1_shopping.png}
+    \caption{Profile plot and plot of f1 score for the shopping dataset.}
+    \label{fista_sklearn_shopping}
+\end{figure}
+
+\begin{figure}[!htb]
+    \centering
+    \includegraphics[width=0.8\linewidth]{../img/fista_vs_sklearn_profile_smartphone.png}
+    \includegraphics[width=0.8\linewidth]{../img/fista_vs_sklearn_f1_smartphone.png}
+    \caption{Profile plot and plot of f1 score for the smartphone dataset.}
+    \label{fista_sklearn_smartphone}
+\end{figure}
+
+\begin{figure}[!htb]
+    \centering
+    \includegraphics[width=0.8\linewidth]{../img/fista_vs_sklearn_profile_software.png}
+    \includegraphics[width=0.8\linewidth]{../img/fista_vs_sklearn_f1_software.png}
+    \caption{Profile plot and plot of f1 score for the software dataset.}
+    \label{fista_sklearn_software}
+\end{figure}
+
+\begin{figure}[!htb]
+    \centering
+    \includegraphics[width=0.8\linewidth]{../img/fista_vs_sklearn_profile_wine.png}
+    \includegraphics[width=0.8\linewidth]{../img/fista_vs_sklearn_f1_wine.png}
+    \caption{Profile plot and plot of f1 score for the wine dataset.}
+    \label{fista_sklearn_wine}
+\end{figure}
+
+\end{appendices}
 
 \end{document}
