@@ -1,6 +1,9 @@
 \documentclass{article}
 \usepackage[english]{babel}
 \usepackage{xcolor}
+\usepackage{graphicx}
+\usepackage[toc,page]{appendix}
+\usepackage[section]{placeins}
 
 \title{Advanced Machine Learning\\Report 1}
 
@@ -77,17 +80,17 @@ Next, we perform gradient downscaling. We start with step size $t = L^{-1}$, whe
 
 In the $k$-th iteration, firstly, an accelerated parameter vector $v$ is calculated using the following formula:
 
-$v = \beta_{k-1} + \frac{k-2}{k+1}(\beta_{k-1} - \beta_{k-2}).$
+$$v = \beta_{k-1} + \frac{k-1}{k+2}(\beta_{k-1} - \beta_{k-2}).$$
 
 We use it to calculate the potential candidate for the new parameters. We correct the vector $v$ by substracting the gradient of $\nabla\mathcal{L}$ at $v$ multiplied by the step size $t$. 
 
-Subsequently, we calculate the next step candidate $\beta_k = \textrm{ST}_{\lambda t_k}(v_{corrected})$.
+Subsequently, we calculate the next step candidate $\beta_k = \textrm{ST}_{\lambda t}(v_{corrected})$.
 
 Finally, we check if the following condition is satisfied:
 
 $$\|\beta_k - \beta_{k-1} \| < 1\mathrm{e}{-6} \cdot (1 + \|\beta_{k-1} \|)$$
 
-If it does, we reduce the value of $t_k$ by multiplying it by a constant coefficient -- in our implementation, $0.9$; if it doesn't, we accept $\beta_k$ as the next step.
+If it does, we stop the optimization process; otherwise, we perform another step.
 
 \section{Labeling missing data}
 
@@ -101,12 +104,43 @@ Since LDA generates a linear decision boundary, we could replace it with a stand
 
 \subsection{KNN}
 
-Instead of predicting distributions of data for each class, we can look more locally, at the neighborhood of the point with a missing label. The reasoning behind this method is quite simple -- data with similar features should intuitively belong to the same class. 
+Instead of predicting distributions of data for each class, we can look more locally, at the neighborhood of the point with a missing label. The reasoning behind this method is quite simple -- data with similar features should intuitively belong to the same class.
 
-\textcolor{red}{something more?}
+We suspect that the quality of this solution may depend on the choice of the \verb|n_neighbors| parameter which, in turn, might be different for each dataset. Nevertheless, we decided to use the default value of 5 to simplify the solution.
 
 \section{Results}
 
+In this section, we show the results of our experiments and provide commentary.
+
+\subsection{Comparison with sklearn}
+
+Firstly, we compared our implementation of Lasso Logistic Regression with \verb|LogisticRegression| implemented in \verb|sklearn| by plotting profile plots and F1 plots for both classes. We selected a range of $\lambda$ parameters individually for each dataset. Then, we fit models for each $\lambda$ using unremoved labels. The results are shown in Figures \ref{fista_sklearn_shopping}, \ref{fista_sklearn_smartphone}, \ref{fista_sklearn_software} and \ref{fista_sklearn_wine} in Appendix \ref{figures_implementations}.
+
+In profile plots, we can see that parameter trajectories are similar, although shifted, for both implementations. It is worth noting that our FISTA implementation shrinks parameters quicker (with respect to $\lambda$) than \verb|sklearn|'s. Additionally, there is some unexpected behavior in case of shopping and software datasets -- the parameter values seem to be shrunk for small lambdas. Nevertheless, these results are quite satisfying.
+
+Plots of F1 scores mostly behave in an expected manner -- if we compare implementations, the trajectories of the measure for different splits are similar, although shifted -- just like in profile plots.
+
+The notable exception is the software dataset, for which the F1 measure is constant and equal to 0 along all splits and implementations. As it turned out, both logistic regression models predicted all labels as 0. We inspected the split (especially the prior probabilities of each class in each sample), performed it with a different seed and looked at different lambda parameters and did not find a reason for this behavior. Despite this, we still decided to include it in the report, since the profile plot itself looks sensible and aids us in drawing conclusions.
+
+\subsection{Missing labels}
+
+Our next set of experiments focused on seeing how percentage of missing labels affects performance of our FISTA implemenetation and how it can be mitigated by label imputation methods.
+
+We have decided to perform these experiments on the wine dataset, since F1 trajectories calculated for it showed the most interesting behavior. The results are shown in Figures \ref{wine_mcar}, \ref{wine_mar1}, \ref{wine_mar2}, and \ref{wine_mnar} in Appendix \ref{figures_missing_labels}. 
+
+These plots are unexpected for us. First of all, we assumed that the Oracle approach would always yield the best results, since it has access to undisrupted labels. This is not the case: all metrics seem to have similar values and F1 trajectories fluctuate around each other without any noticable pattern.
+
+Second of all, we were sure that removing more labels would result in severe decrease of performance. Instead, F1 doesn't change significantly with the rise of missing label percentage. The MNAR scheme is a barely noticable exception -- on the plot shown in Figure \ref{wine_mnar} we can see that for non-Oracle imputation methods, the metric decreases slightly.
+
+Lastly, it seems that no matter the label missingness scheme, we achieved similar F1 scores as in the base model fitted for full data (as shown in Figure \ref{fista_sklearn_wine}). This provokes a question whether label imputation is that important if the dataset is not significantly small. 
+
+\section{Conclusions}
+
+% something about how fista is great
+
+% something about the quality of our implementations
+
+% something about why metrics may not change
 
 \newpage
 \begin{thebibliography}{9}
@@ -115,5 +149,76 @@ A. Beck and M. Teboulle, “A Fast Iterative Shrinkage-Thresholding Algorithm fo
 \bibitem{fista_algo}
 R. Tibshirani, “Proximal Gradient Descent (and Acceleration)”, Convex Optimization lecture, Carnegie Mellon University, 
 \end{thebibliography}
+
+\newpage
+\begin{appendices}
+
+\section{Figures -- implementations}
+\label{figures_implementations}
+
+\begin{figure}[!htb]
+    \centering
+    \includegraphics[width=0.8\linewidth]{../img/fista_vs_sklearn_profile_shopping.png}
+    \includegraphics[width=0.8\linewidth]{../img/fista_vs_sklearn_f1_shopping.png}
+    \caption{Profile plot and plot of f1 score for the shopping dataset.}
+    \label{fista_sklearn_shopping}
+\end{figure}
+
+\begin{figure}[!htb]
+    \centering
+    \includegraphics[width=0.8\linewidth]{../img/fista_vs_sklearn_profile_smartphone.png}
+    \includegraphics[width=0.8\linewidth]{../img/fista_vs_sklearn_f1_smartphone.png}
+    \caption{Profile plot and plot of f1 score for the smartphone dataset.}
+    \label{fista_sklearn_smartphone}
+\end{figure}
+
+\begin{figure}[!htb]
+    \centering
+    \includegraphics[width=0.8\linewidth]{../img/fista_vs_sklearn_profile_software.png}
+    \includegraphics[width=0.8\linewidth]{../img/fista_vs_sklearn_f1_software.png}
+    \caption{Profile plot and plot of f1 score for the software dataset.}
+    \label{fista_sklearn_software}
+\end{figure}
+
+\begin{figure}[!htb]
+    \centering
+    \includegraphics[width=0.8\linewidth]{../img/fista_vs_sklearn_profile_wine.png}
+    \includegraphics[width=0.8\linewidth]{../img/fista_vs_sklearn_f1_wine.png}
+    \caption{Profile plot and plot of f1 score for the wine dataset.}
+    \label{fista_sklearn_wine}
+\end{figure}
+
+\section{Figures -- missing labels}
+\label{figures_missing_labels}
+
+\begin{figure}[!htb]
+    \centering
+    \includegraphics[width=\linewidth]{../img/f1_vs_missing_wine_mcar.png}
+    \caption{F1 measure values in the MCAR setting for the wine dataset.}
+    \label{wine_mcar}
+\end{figure}
+
+\begin{figure}[!htb]
+    \centering
+    \includegraphics[width=\linewidth]{../img/f1_vs_missing_wine_mar1.png}
+    \caption{F1 measure values in the MAR1 setting for the wine dataset.}
+    \label{wine_mar1}
+\end{figure}
+
+\begin{figure}[!htb]
+    \centering
+    \includegraphics[width=\linewidth]{../img/f1_vs_missing_wine_mar2.png}
+    \caption{F1 measure values in the MAR2 setting for the wine dataset.}
+    \label{wine_mar2}
+\end{figure}
+
+\begin{figure}[!htb]
+    \centering
+    \includegraphics[width=\linewidth]{../img/f1_vs_missing_wine_mnar.png}
+    \caption{F1 measure values in the MNAR setting for the wine dataset.}
+    \label{wine_mnar}
+\end{figure}
+
+\end{appendices}
 
 \end{document}
