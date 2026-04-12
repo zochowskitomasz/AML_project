@@ -32,15 +32,15 @@ class UnlabeledLogReg:
             case "knn":
                 knn = KNeighborsClassifier()
                 knn.fit(X[y != -1], y[y != -1])
-                y_imputed = knn.predict(X[y != -1]) 
-                y_all = y.copy()
+                y_imputed = knn.predict(X[y == -1])
+                y_all = np.array(y).copy()
                 y_all[y_all == -1] = y_imputed
                 return model.fit(X, y_all)
             case "lda":
                 lda = LinearDiscriminantAnalysis()
                 lda.fit(X[y != -1], y[y != -1])
-                y_imputed = lda.predict(X[y != -1]) 
-                y_all = y.copy()
+                y_imputed = lda.predict(X[y == -1]) 
+                y_all = np.array(y).copy()
                 y_all[y_all == -1] = y_imputed
                 return model.fit(X, y_all)
             case _:
