@@ -37,7 +37,7 @@ When obtaining data, it is not uncommon for some parts of it to go missing. An i
 
 It is important to evaluate how to handle such cases, detect dependence (if such exists), and fill the missing data back in. 
 
-In this project we inspect the performance of two label infering methods and compare them with the naive method (removing all unlabeled observations) and the oracle method (an optimistic case in which no labels are missing) in all four missing label scenarios. Then, we fit our own implementation of logistic regression with Lasso (using FISTA optimizer) and \verb|sklearn|'s \verb|LogisticRegression| with L1 penalty and compare the results.
+In this project we inspect the performance of two label inferring methods and compare them with the naive method (removing all unlabeled observations) and the oracle method (an optimistic case in which no labels are missing) in all four missing label scenarios. Then, we fit our own implementation of logistic regression with Lasso (using FISTA optimizer) and \verb|sklearn|'s \verb|LogisticRegression| with L1 penalty and compare the results.
 
 % In this project we use different approaches to filling missing labels. First, a logistic regression with a new target column.
 % Then, the FISTA algorithm and a Logistic Lasso Regression model. Lastly, various label infering methods used to reconstruct
@@ -72,7 +72,7 @@ Our implementation of the FISTA algorithm for Lasso Regression is based on \cite
 
 The soft-thresholding function \verb|ST| can be expressed using a following formula:
 
-$$\textrm{ST}_l(\beta) = \textrm{sgn}(\beta) \max\{|B| - l, 0\}$$
+$$\textrm{ST}_l(\beta) = \textrm{sgn}(\beta) \max\{|\beta| - l, 0\}$$
 
 Intuitively, it takes a vector $\beta$ and reduces the absolute value of each coordinate by a maximum of $l$. This is a special case of proximal mapping, which, more generally, allows to minimize $f$ easily. Additionally, we have defined two helper functions \verb|sigmoid| and \verb|gradient| corresponding to $\sigma$ and $\nabla \mathcal{L}$, respectively, where $\mathcal{L}$ is the logistic loss function.
 
@@ -82,7 +82,7 @@ In the $k$-th iteration, firstly, an accelerated parameter vector $v$ is calcula
 
 $$v = \beta_{k-1} + \frac{k-1}{k+2}(\beta_{k-1} - \beta_{k-2}).$$
 
-We use it to calculate the potential candidate for the new parameters. We correct the vector $v$ by substracting the gradient of $\nabla\mathcal{L}$ at $v$ multiplied by the step size $t$. 
+We use it to calculate the potential candidate for the new parameters. We correct the vector $v$ by subtracting the gradient of $\nabla\mathcal{L}$ at $v$ multiplied by the step size $t$. 
 
 Subsequently, we calculate the next step candidate $\beta_k = \textrm{ST}_{\lambda t}(v_{corrected})$.
 
@@ -124,28 +124,34 @@ The notable exception is the software dataset, for which the F1 measure is const
 
 \subsection{Missing labels}
 
-Our next set of experiments focused on seeing how percentage of missing labels affects performance of our FISTA implemenetation and how it can be mitigated by label imputation methods.
+Our next set of experiments focused on seeing how percentage of missing labels affects performance of our FISTA implementation and how it can be mitigated by label imputation methods.
 
 We have decided to perform these experiments on the wine dataset, since F1 trajectories calculated for it showed the most interesting behavior. The results are shown in Figures \ref{wine_mcar}, \ref{wine_mar1}, \ref{wine_mar2}, and \ref{wine_mnar} in Appendix \ref{figures_missing_labels}. 
 
-These plots are unexpected for us. First of all, we assumed that the Oracle approach would always yield the best results, since it has access to undisrupted labels. This is not the case: all metrics seem to have similar values and F1 trajectories fluctuate around each other without any noticable pattern.
+These plots are unexpected for us. First of all, we assumed that the Oracle approach would always yield the best results, since it has access to undisturbed labels. This is not the case: all metrics seem to have similar values and F1 trajectories fluctuate around each other without any noticeable pattern.
 
-Second of all, we were sure that removing more labels would result in severe decrease of performance. Instead, F1 doesn't change significantly with the rise of missing label percentage. The MNAR scheme is a barely noticable exception -- on the plot shown in Figure \ref{wine_mnar} we can see that for non-Oracle imputation methods, the metric decreases slightly.
+Second of all, we were sure that removing more labels would result in severe decrease of performance. Instead, F1 doesn't change significantly with the rise of missing label percentage. The MNAR scheme is a barely noticeable exception -- on the plot shown in Figure \ref{wine_mnar} we can see that for non-Oracle imputation methods, the metric decreases slightly.
 
 Lastly, it seems that no matter the label missingness scheme, we achieved similar F1 scores as in the base model fitted for full data (as shown in Figure \ref{fista_sklearn_wine}). This provokes a question whether label imputation is that important if the dataset is not significantly small. 
 
 \section{Conclusions}
 
-% something about how fista is great
+In this project, we addressed binary classification with missing labels by combining three components: (i) data preparation and simulation of four missingness mechanisms (MCAR, MAR1, MAR2, MNAR), (ii) our own implementation of logistic Lasso regression optimized with FISTA, and (iii) a two-method label completion framework (LDA and KNN) wrapped in \verb|UnlabeledLogReg| and compared against Naive and Oracle baselines.
 
-% something about the quality of our implementations
+From the optimization perspective, our FISTA implementation produced coefficient paths and validation behavior qualitatively consistent with \verb|sklearn| logistic regression with L1 penalty, which supports the correctness of the implementation. The main observed difference was a shift in regularization strength at which shrinkage occurred, suggesting that while both approaches recover similar trends, practical model selection remains sensitive to scaling, stopping criteria, and parameterization details.
 
-% something about why metrics may not change
+From the missing-label perspective, the expected strong dominance of Oracle over the remaining methods was not consistently observed in the wine experiments. Across MCAR, MAR1, and MAR2, all approaches often yielded similar F1 values, and only MNAR showed a clearer degradation trend for non-Oracle methods as the missingness level increased. This indicates that for this dataset and feature space, moderate label incompleteness can be partially compensated by the available covariate information and by simple completion rules.
+
+Comparing the two completion strategies, no single method dominated in every setting. This confirms that the quality of label imputation is mechanism-dependent: local neighborhood assumptions (KNN) and distributional assumptions (LDA) may each be beneficial depending on the geometry of the data. Therefore, treating imputation as a tunable modeling choice, rather than a fixed preprocessing step, is important in practice.
+
+An important limitation is that some observed trajectories (especially for the software dataset) were difficult to interpret, including degenerate predictions in both our and \verb|sklearn| implementations despite reasonable coefficient profiles. This suggests potential class imbalance or split-specific effects and motivates additional robustness checks (repeated splits, class-balanced resampling, and threshold analysis) in future work.
+
+Overall, the project objectives were achieved: we implemented and validated FISTA-based logistic Lasso, proposed and tested two methods for handling missing labels, and performed comparative experiments under four missingness schemes and multiple missingness levels. The key practical conclusion is that the impact of missing labels is highly context dependent; in some regimes, simple completion methods can approach Oracle-level utility, while in MNAR scenarios careful modeling of the missingness mechanism becomes substantially more important.
 
 \newpage
 \begin{thebibliography}{9}
 \bibitem{fista}
-A. Beck and M. Teboulle, “A Fast Iterative Shrinkage-Thresholding Algorithm for Linear Inverse Problems,” SIAM Journal on Imaging Sciences, vol. 2, no. 1, pp. 183–202, 2019, doi: https://doi.org/10.1137/080716542.
+A. Beck and M. Teboulle, “A Fast Iterative Shrinkage-Thresholding Algorithm for Linear Inverse Problems,” SIAM Journal on Imaging Sciences, vol. 2, no. 1, pp. 183–202, 2009, doi: https://doi.org/10.1137/080716542.
 \bibitem{fista_algo}
 R. Tibshirani, “Proximal Gradient Descent (and Acceleration)”, Convex Optimization lecture, Carnegie Mellon University, 
 \end{thebibliography}
