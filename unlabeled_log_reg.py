@@ -1,17 +1,11 @@
 import numpy as np
+from labeled_log_reg import LabeledLogReg
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import accuracy_score, balanced_accuracy_score, f1_score, roc_auc_score
 from sklearn.neighbors import KNeighborsClassifier
 
 class UnlabeledLogReg:
-    def __init__(self, logreg_impl):
-        if logreg_impl == "sklearn":
-            self.logreg = LogisticRegression(penalty="l1")
-        else:
-            self.logreg = None # TODO: replace with own logreg
-
-    def fit(self, X: np.ndarray, y: np.ndarray, method: str = "naive") -> None:
+    def fit(self, model: LogisticRegression | LabeledLogReg, X: np.ndarray, y: np.ndarray, method: str = "naive") -> LogisticRegression | LabeledLogReg:
         """
         Fits the logistic regression model to the data X and labels y using the specified method.
 
@@ -30,76 +24,24 @@ class UnlabeledLogReg:
         """
         match method:
             case "naive":
-                self.logreg.fit(X[y != -1], y[y != -1])
+                return model.fit(X[y != -1], y[y != -1])
             case "oracle":
                 if (y == -1).sum() > 0:
                     raise ValueError("Missing labels found in y while using 'oracle' method.")
-                self.logreg.fit(X, y)
+                return model.fit(X, y)
             case "knn":
                 knn = KNeighborsClassifier()
                 knn.fit(X[y != -1], y[y != -1])
-                y_imputed = knn.predict(X[y != -1]) 
-                y_all = y.copy()
+                y_imputed = knn.predict(X[y == -1])
+                y_all = np.array(y).copy()
                 y_all[y_all == -1] = y_imputed
-                self.logreg.fit(X, y_all)
+                return model.fit(X, y_all)
             case "lda":
                 lda = LinearDiscriminantAnalysis()
                 lda.fit(X[y != -1], y[y != -1])
-                y_imputed = lda.predict(X[y != -1]) 
-                y_all = y.copy()
+                y_imputed = lda.predict(X[y == -1]) 
+                y_all = np.array(y).copy()
                 y_all[y_all == -1] = y_imputed
-                self.logreg.fit(X, y_all)
+                return model.fit(X, y_all)
             case _:
                 raise ValueError(f"Unknown method: {method}. Use one of following: 'naive', 'oracle', 'knn', 'lda'.")
-    
-    def predict_proba(self, X: np.ndarray) -> np.ndarray:
-        """
-        Predicts the probabilities for the input data X using the fitted logistic regression model.
-
-        Parameters:
-        X (np.ndarray): Input data.
-
-        Returns:
-        np.ndarray: Predicted labels.
-        """
-
-        return self.logreg.predict_proba(X)
-    
-    def predict(self, X: np.ndarray) -> np.ndarray:
-        """
-        Predicts the labels for the input data X using the fitted logistic regression model.
-
-        Parameters:
-        X (np.ndarray): Input data.
-
-        Returns:
-        np.ndarray: Predicted labels.
-        """
-
-        return self.logreg.predict(X)
-    
-    def score(self, X: np.ndarray, y: np.ndarray, metric: str = "accuracy") -> float:
-        """
-        Computes `metric` of the fitted logistic regression model on the input data `X` and true labels `y`.
-
-        Parameters:
-        X (np.ndarray): Input data.
-        y (np.ndarray): True labels.
-        metric (str): The metric to compute. Options are "accuracy", "balanced_accuracy", "f1" and "roc_auc". Default is "accuracy".
-
-        Returns:
-        float: The computed metric.
-        """
-        y_pred = self.predict(X)
-        y_proba = self.predict_proba(X)[:, 1]
-        match metric:
-            case "accuracy":
-                return accuracy_score(y, y_pred)
-            case "balanced_accuracy":
-                return balanced_accuracy_score(y, y_pred)
-            case "f1":
-                return f1_score(y, y_pred)
-            case "roc_auc":
-                return roc_auc_score(y, y_proba)
-            case _:
-                raise ValueError(f"Unknown metric: {metric}. Use one of following: 'accuracy', 'balanced_accuracy', 'f1', 'roc_auc'.")
