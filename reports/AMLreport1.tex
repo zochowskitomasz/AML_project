@@ -77,17 +77,17 @@ Next, we perform gradient downscaling. We start with step size $t = L^{-1}$, whe
 
 In the $k$-th iteration, firstly, an accelerated parameter vector $v$ is calculated using the following formula:
 
-$v = \beta_{k-1} + \frac{k-2}{k+1}(\beta_{k-1} - \beta_{k-2}).$
+$$v = \beta_{k-1} + \frac{k-1}{k+2}(\beta_{k-1} - \beta_{k-2}).$$
 
 We use it to calculate the potential candidate for the new parameters. We correct the vector $v$ by substracting the gradient of $\nabla\mathcal{L}$ at $v$ multiplied by the step size $t$. 
 
-Subsequently, we calculate the next step candidate $\beta_k = \textrm{ST}_{\lambda t_k}(v_{corrected})$.
+Subsequently, we calculate the next step candidate $\beta_k = \textrm{ST}_{\lambda t}(v_{corrected})$.
 
 Finally, we check if the following condition is satisfied:
 
 $$\|\beta_k - \beta_{k-1} \| < 1\mathrm{e}{-6} \cdot (1 + \|\beta_{k-1} \|)$$
 
-If it does, we reduce the value of $t_k$ by multiplying it by a constant coefficient -- in our implementation, $0.9$; if it doesn't, we accept $\beta_k$ as the next step.
+If it does, we stop the optimization process; otherwise, we perform another step.
 
 \section{Labeling missing data}
 
