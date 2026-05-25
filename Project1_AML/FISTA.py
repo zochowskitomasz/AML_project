@@ -37,7 +37,6 @@ def FISTA(X, y, lam, bet, iterations=500, fit_intercept=True):
 
     bk = bet.astype(float, copy=True)
     bkt = bk.copy()
-    tk = 1.0
 
     spectral_norm = np.linalg.norm(X, ord=2)
     lipschitz = (spectral_norm * spectral_norm) / (4.0 * X.shape[0])
