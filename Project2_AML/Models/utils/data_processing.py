@@ -107,7 +107,7 @@ def vif_filter(X: pd.DataFrame, threshold: float = 10) -> pd.Index:
         vif_data["VIF"] = [variance_inflation_factor(X.values, i) for i in range(len(X.columns))]
         candidate = vif_data.sort_values("VIF", ascending=False).iloc[0]
         if candidate["VIF"] > threshold:
-            chosen_columns.drop(candidate["feature"])
+            chosen_columns = chosen_columns.drop(candidate["feature"])
             print(f"Removed column {candidate["feature"]} with VIF={candidate["VIF"]:.2f}")
         else:
             break
