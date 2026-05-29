@@ -84,13 +84,11 @@ def pca(X_train: pd.DataFrame, X_test: pd.DataFrame, criterion: str | None = "cu
 
 
 
-def vif_filter(X: pd.DataFrame, threshold: float = 10) -> pd.Index:
+def vif(X_train: pd.DataFrame, X_test: pd.DataFrame, threshold: float = 10) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
     Perform Variance Inflation Factor analysis and return a list of columns after filtering by threshold.
 
     At each iteration, the column with the highest VIF value is removed from the set.
-
-    Warning: the procedure is time intensive and unstable for all predictors.
 
     Parameters:
         X (pd.DataFrame): The DataFrame on which the analysis will be performed.
@@ -99,12 +97,12 @@ def vif_filter(X: pd.DataFrame, threshold: float = 10) -> pd.Index:
         index (pd.Index): An index containing columns that were not removed during the procedure.
     """
     
-    chosen_columns = X.columns
+    chosen_columns = X_train.columns
 
     while True:
         vif_data = pd.DataFrame()
         vif_data["feature"] = chosen_columns
-        vif_data["VIF"] = [variance_inflation_factor(X.values, i) for i in range(len(X.columns))]
+        vif_data["VIF"] = [variance_inflation_factor(X_train[chosen_columns].values, i) for i in range(len(chosen_columns))]
         candidate = vif_data.sort_values("VIF", ascending=False).iloc[0]
         if candidate["VIF"] > threshold:
             chosen_columns = chosen_columns.drop(candidate["feature"])
@@ -112,4 +110,4 @@ def vif_filter(X: pd.DataFrame, threshold: float = 10) -> pd.Index:
         else:
             break
 
-    return chosen_columns
+    return X_train[chosen_columns], X_test[chosen_columns]
