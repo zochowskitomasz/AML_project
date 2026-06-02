@@ -154,7 +154,7 @@ def select_from_model(X_train: pd.DataFrame, y_train: pd.Series | pd.DataFrame, 
     mask = selector.get_support()
     print(mask)
 
-    return X_train.iloc[:, mask], X_test.iloc[:, mask]
+    return X_train.loc[:, mask], X_test.loc[:, mask]
 
 
 
