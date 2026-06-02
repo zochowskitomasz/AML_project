@@ -1,8 +1,8 @@
 import numpy as np
 import pandas as pd
 
-from sklearn.decomposition import PCA
-from sklearn.feature_selection import SelectKBest, f_classif
+from sklearn.ensemble import ExtraTreesClassifier
+from sklearn.feature_selection import SelectFromModel, SelectKBest, f_classif
 from sklearn.preprocessing import StandardScaler
 
 from statsmodels.stats.outliers_influence import variance_inflation_factor
@@ -55,7 +55,7 @@ def standarize(X_train: pd.DataFrame, X_test: pd.DataFrame) -> tuple[pd.DataFram
 
 ########### FEATURE SELECTION ###########
 
-# NOTE: very slow
+# very slow and actaully ill-advised for this high amount of features
 def variance_inflation_factor(X_train: pd.DataFrame, X_test: pd.DataFrame, threshold: float = 10) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
     Perform Variance Inflation Factor analysis and return a list of columns after filtering by threshold.
@@ -85,6 +85,8 @@ def variance_inflation_factor(X_train: pd.DataFrame, X_test: pd.DataFrame, thres
     return X_train[chosen_columns], X_test[chosen_columns]
 
 
+
+# good for early selection - run it with a relatively low threshold like 0.01
 def variance_threshold(X_train: pd.DataFrame, X_test: pd.DataFrame, threshold: float = 0.0) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
     Remove features whose variance in `X_train` is below the given threshold.
@@ -104,6 +106,7 @@ def variance_threshold(X_train: pd.DataFrame, X_test: pd.DataFrame, threshold: f
 
 
 
+# good to run with a high threshold (default is good) before select_from_model to stabilize it
 def correlation_filter(X_train: pd.DataFrame, X_test: pd.DataFrame, threshold: float = 0.9) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
     Remove highly correlated features from `X_train` and `X_test`.
@@ -123,11 +126,41 @@ def correlation_filter(X_train: pd.DataFrame, X_test: pd.DataFrame, threshold: f
     upper = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
     to_drop = [column for column in upper.columns if any(upper[column] > threshold)]
     selected_columns = X_train.columns.difference(to_drop)
+
     return X_train[selected_columns], X_test[selected_columns]
 
 
+# use ExtraTreesClassifier for any model or LogisticRegression(penalty="l1") for logistic regression
+# remember to set a seed for the classifier passed
+# leave default threshold for lasso; do a gridsearch for forest (suggested values: ['mean', 'median', '1.25*mean', '0.75*mean'])
+def select_from_model(X_train: pd.DataFrame, y_train: pd.Series | pd.DataFrame, X_test: pd.DataFrame, estimator = ExtraTreesClassifier(random_state=42), threshold: str | float | None = None) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Perform feature selection based on the chosen model's feature importances.
 
-def select_k_best(X_train: pd.DataFrame, y_train: pd.Series | pd.DataFrame, X_test: pd.DataFrame, k: int = 20, score_func=None) -> tuple[pd.DataFrame, pd.DataFrame]:
+    Either ExtraTreesClassifier or LogisticRegression(penalty="l1") should be passed. It is possible to adjust hyperparameters () in order to find the optimal model.
+    
+    Parameters:
+        X_train (pd.DataFrame): Features from the training sample.
+        y_train (pd.Series | pd.DataFrame): Target values for the training sample.
+        X_test (pd.DataFrame): Features from the test sample.
+        estimator (default=ExtraTreesClassifier): Estimator to be used.
+        threshold (str | float): Threshold for feature selection. If ommited, 1e-5 for LogisticRegression and "mean" for ExtraTreesClassifier is used. 
+    Returns:
+        (X_train_new, X_test_new) (tuple[pd.DataFrame, pd.DataFrame]): DataFrames containing only the selected features.
+    """
+
+    selector = SelectFromModel(estimator, threshold=threshold)
+    selector.fit(X_train, y_train)
+    mask = selector.get_support()
+
+    return X_train[mask], X_test[mask]
+
+
+
+# use as an alternative to select_from_model
+# default f_classif performs the ANOVA test (linear relationships)
+# use mutual_info_classif for non-linear relationships (good for trees)
+def select_k_best(X_train: pd.DataFrame, y_train: pd.Series | pd.DataFrame, X_test: pd.DataFrame, k: int = 20, score_func=f_classif) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
     Select the top `k` features according to a univariate statistical test.
 
@@ -136,14 +169,11 @@ def select_k_best(X_train: pd.DataFrame, y_train: pd.Series | pd.DataFrame, X_te
         y_train (pd.Series | pd.DataFrame): Target values for the training sample.
         X_test (pd.DataFrame): Features from the test sample.
         k (int, default=20): Number of top features to select.
-        score_func (callable, optional): Scoring function from sklearn.feature_selection. If omitted, `f_classif` is used.
+        score_func (callable, default=f_classif): Scoring function from sklearn.feature_selection.
 
     Returns:
         (X_train_new, X_test_new) (tuple[pd.DataFrame, pd.DataFrame]): DataFrames containing only the selected features.
     """
-
-    if score_func is None:
-        score_func = f_classif
 
     y = y_train.squeeze()
     selector = SelectKBest(score_func=score_func, k=min(k, X_train.shape[1])).fit(X_train, y)
