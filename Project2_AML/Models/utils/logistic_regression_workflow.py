@@ -14,15 +14,43 @@ The filter transformers are also reused by `utils/svm_workflow.py`.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator, TransformerMixin
+from sklearn.ensemble import ExtraTreesClassifier
 from sklearn.feature_selection import SelectFromModel
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
+
+SelectorKind = Literal["l1", "extra_trees"]
+
+
+def make_selector_estimator(
+    kind: SelectorKind,
+    *,
+    selector_c: float = 1.0,
+    random_state: int = 42,
+    max_iter: int = 2000,
+) -> LogisticRegression | ExtraTreesClassifier:
+    """Build the SelectFromModel estimator used by LR and SVM pipelines."""
+
+    if kind == "extra_trees":
+        return ExtraTreesClassifier(
+            n_estimators=200,
+            random_state=random_state,
+            n_jobs=-1,
+        )
+
+    return LogisticRegression(
+        penalty="l1",
+        solver="liblinear",
+        C=selector_c,
+        random_state=random_state,
+        max_iter=max_iter,
+    )
 
 
 def _to_frame(X: Any) -> pd.DataFrame:
@@ -99,6 +127,7 @@ def build_logistic_regression_pipeline(
     *,
     variance_threshold: float = 0.01,
     correlation_threshold: float = 0.9,
+    selector_kind: SelectorKind = "l1",
     selector_c: float = 1.0,
     model_c: float = 1.0,
     random_state: int = 42,
@@ -108,17 +137,15 @@ def build_logistic_regression_pipeline(
     """Build the leakage-safe Project 2 Logistic Regression pipeline.
 
     Notes for teammates:
-    - L1 feature selection uses `solver="liblinear"` because sklearn requires it for L1.
-    - `selector_threshold=None` keeps sklearn's default L1 cutoff (same idea as the notebook).
-    - Do not run variance/correlation/SelectFromModel outside this pipeline during CV;
-      that would leak validation-fold information.
+    - `selector_kind="l1"`: SelectFromModel with L1 LogisticRegression (liblinear).
+    - `selector_kind="extra_trees"`: SelectFromModel with ExtraTreesClassifier.
+    - Use stricter `selector_threshold` values (e.g. "median", "1.25*mean") to keep
+      NoVariables low for the business score.
     """
 
-    # liblinear is required for L1 penalty in sklearn's LogisticRegression.
-    selector_estimator = LogisticRegression(
-        penalty="l1",
-        solver="liblinear",
-        C=selector_c,
+    selector_estimator = make_selector_estimator(
+        selector_kind,
+        selector_c=selector_c,
         random_state=random_state,
         max_iter=max_iter,
     )
@@ -158,6 +185,8 @@ def build_logistic_regression_pipeline(
 
 __all__ = [
     "CorrelationFilterTransformer",
+    "SelectorKind",
     "VarianceFilterTransformer",
     "build_logistic_regression_pipeline",
+    "make_selector_estimator",
 ]

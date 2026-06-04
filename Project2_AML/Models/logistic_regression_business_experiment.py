@@ -1,19 +1,8 @@
 """Run the Project 2 Logistic Regression business experiment.
 
-This script keeps preprocessing inside an sklearn Pipeline and reuses the shared
-business scorer for model selection. It is intentionally narrow in scope: only
-Project 2 Logistic Regression, no SVM and no extra model families.
-
 How to run (from `Project2_AML/Models`):
     python logistic_regression_experiment.py
     python logistic_regression_business_experiment.py
-
-Outputs are written to `outputs/logistic_regression/`:
-    - k_search_results.csv
-    - logistic_regression_pipeline.joblib
-    - test_rankings.csv
-    - selected_variables.txt
-    - summary.json
 """
 
 from __future__ import annotations
@@ -40,9 +29,9 @@ from utils.business_scoring import (  # noqa: E402
     select_top_k_targets,
 )
 from utils.data_processing import load_data  # noqa: E402
-from utils.logistic_regression_workflow import (
+from utils.logistic_regression_workflow import (  # noqa: E402
     build_logistic_regression_pipeline,
-)  # noqa: E402
+)
 
 
 def _prepare_output_dir() -> Path:
@@ -51,41 +40,98 @@ def _prepare_output_dir() -> Path:
     return output_dir
 
 
-def _k_values() -> list[int]:
-    # Project rule: contact at most 1000 customers; search k in steps up to that cap.
-    return list(range(50, 1001, 50))
+def _k_values(*, quick: bool = False) -> list[int]:
+    if quick:
+        return [200, 500, 1000]
+    return [50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000]
 
 
-def run_experiment() -> dict[str, object]:
-    """Fit and evaluate the Logistic Regression workflow.
+def _preprocess_param_grid(*, quick: bool) -> dict[str, list]:
+    if quick:
+        return {
+            "variance_filter__threshold": [0.01, 0.05],
+            "correlation_filter__threshold": [0.9],
+        }
+    return {
+        "variance_filter__threshold": [0.01, 0.05],
+        "correlation_filter__threshold": [0.9, 0.8],
+    }
 
-    The selected feature count is inferred from the fitted selector support mask,
-    so the business score reflects the actual number of retained variables.
-    """
+
+def _l1_param_grid(*, quick: bool) -> dict[str, list]:
+    grid = {
+        **_preprocess_param_grid(quick=quick),
+        "selector__threshold": ["median", "1.25*mean"]
+        if quick
+        else ["median", "1.25*mean", "2*mean"],
+        "model__C": [0.1, 1.0] if quick else [0.1, 1.0, 3.0],
+    }
+    grid["selector__estimator__C"] = [0.01, 0.1] if quick else [0.001, 0.01, 0.1]
+    return grid
+
+
+def _extra_trees_param_grid(*, quick: bool) -> dict[str, list]:
+    return {
+        **_preprocess_param_grid(quick=quick),
+        "selector__threshold": ["median", "1.25*mean"]
+        if quick
+        else ["mean", "median", "1.25*mean", "2*mean"],
+        "model__C": [0.1, 1.0] if quick else [0.1, 1.0, 3.0],
+    }
+
+
+def _fit_selector_grid(
+    X_train,
+    y_train,
+    *,
+    best_k: int,
+    selector_kind: str,
+    quick: bool,
+    cv: int,
+) -> GridSearchCV:
+    pipeline = build_logistic_regression_pipeline(
+        selector_kind=selector_kind,  # type: ignore[arg-type]
+        selector_threshold="median",
+    )
+    param_grid = (
+        _l1_param_grid(quick=quick)
+        if selector_kind == "l1"
+        else _extra_trees_param_grid(quick=quick)
+    )
+    grid = GridSearchCV(
+        estimator=pipeline,
+        param_grid=param_grid,
+        scoring=BusinessScorer(k=best_k, max_contacts=1000, positive_label=1),
+        cv=cv,
+        n_jobs=-1,
+        refit=True,
+        error_score=np.nan,
+    )
+    grid.fit(X_train, y_train)
+    return grid
+
+
+def run_experiment(*, quick: bool = False) -> dict[str, object]:
+    """Tune k, then grid-search L1 and ExtraTrees selectors; keep the best."""
 
     output_dir = _prepare_output_dir()
+    cv = 3 if quick else 5
 
     data_dir = SCRIPT_DIR.parent / "data"
     X_train, y_train, X_test = load_data(path=f"{data_dir}/")
     y_train = y_train.squeeze()
 
-    base_pipeline = build_logistic_regression_pipeline(
-        variance_threshold=0.01,
-        correlation_threshold=0.9,
-        selector_c=1.0,
-        model_c=1.0,
-        random_state=42,
-        max_iter=2000,
+    # k-search on a sparse default pipeline (ExtraTrees + median threshold).
+    k_probe = build_logistic_regression_pipeline(
+        selector_kind="extra_trees",
+        selector_threshold="median",
     )
-
-    # `k` controls how many customers we contact after ranking by model confidence.
-    # The business scorer keeps the deployment rule separate from model fitting.
     k_results = evaluate_business_score_over_k(
-        base_pipeline,
+        k_probe,
         X_train,
         y_train,
-        _k_values(),
-        cv=5,
+        _k_values(quick=quick),
+        cv=cv,
         max_contacts=1000,
         positive_label=1,
         random_state=42,
@@ -95,25 +141,29 @@ def run_experiment() -> dict[str, object]:
     best_k_row = k_results.loc[k_results["mean_score"].idxmax()]
     best_k = int(best_k_row["k"])
 
-    # k is tuned on the default pipeline first; C values are tuned second.
-    # Both stages use CV, so neither step leaks validation labels into training.
+    grids: list[tuple[str, GridSearchCV]] = []
+    for selector_kind in ("l1", "extra_trees"):
+        print(f"Grid search: Logistic Regression with selector={selector_kind}")
+        grids.append(
+            (
+                selector_kind,
+                _fit_selector_grid(
+                    X_train,
+                    y_train,
+                    best_k=best_k,
+                    selector_kind=selector_kind,
+                    quick=quick,
+                    cv=cv,
+                ),
+            )
+        )
 
-    # Grid-search only the Logistic Regression hyperparameters; the preprocessing
-    # stays inside the pipeline so every fold recomputes it without leakage.
-    grid = GridSearchCV(
-        estimator=base_pipeline,
-        param_grid={
-            "selector__estimator__C": [0.1, 0.3, 1.0, 3.0],
-            "model__C": [0.1, 0.3, 1.0, 3.0],
-        },
-        scoring=BusinessScorer(k=best_k, max_contacts=1000, positive_label=1),
-        cv=5,
-        n_jobs=-1,
-        refit=True,
-        error_score="raise",
+    selector_kind, grid = max(
+        grids,
+        key=lambda item: item[1].best_score_ if item[1].best_score_ == item[1].best_score_ else float("-inf"),
     )
-    grid.fit(X_train, y_train)
-
+    if grid.best_score_ != grid.best_score_:
+        raise RuntimeError("All grid-search candidates failed. Relax the parameter grid.")
     best_pipeline = grid.best_estimator_
     joblib.dump(best_pipeline, output_dir / "logistic_regression_pipeline.joblib")
 
@@ -140,6 +190,7 @@ def run_experiment() -> dict[str, object]:
     summary = {
         "best_k": best_k,
         "best_k_cv_score": float(best_k_row["mean_score"]),
+        "best_selector_kind": selector_kind,
         "best_model_params": grid.best_params_,
         "best_cv_business_score": float(grid.best_score_),
         "n_variables": infer_n_variables(best_pipeline, X=X_train),
@@ -153,6 +204,7 @@ def run_experiment() -> dict[str, object]:
         json.dump(summary, handle, indent=2)
 
     print("Best k:", best_k)
+    print("Best selector:", selector_kind)
     print("Best model params:", grid.best_params_)
     print("Best CV score:", grid.best_score_)
     print("Selected features:", summary["n_variables"])
@@ -161,7 +213,6 @@ def run_experiment() -> dict[str, object]:
     return summary
 
 
-# Backward-compatible alias for notebooks or scripts that used this name earlier.
 run_logistic_regression_experiment = run_experiment
 
 

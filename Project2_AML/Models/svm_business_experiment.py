@@ -1,18 +1,6 @@
 """Run the Project 2 SVM business experiment.
 
-This mirrors `logistic_regression_business_experiment.py` so teammates can compare
-both assigned linear models with the same business-score workflow.
-
-How to run (from `Project2_AML/Models`):
-    python svm_experiment.py
-    python svm_business_experiment.py
-
-Outputs are written to `outputs/svm/`:
-    - k_search_results.csv
-    - svm_pipeline.joblib
-    - test_rankings.csv
-    - selected_variables.txt
-    - summary.json
+Teammate pipeline: variance -> correlation -> standardize -> ExtraTrees selector -> SVC.
 """
 
 from __future__ import annotations
@@ -49,34 +37,41 @@ def _prepare_output_dir() -> Path:
 
 
 def _k_values(*, quick: bool = False) -> list[int]:
-    # Project rule: contact at most 1000 customers; search k in steps up to that cap.
     if quick:
-        return [250, 500, 1000]
-    return list(range(50, 1001, 50))
+        return [200, 500, 1000]
+    return [50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000]
+
+
+def _param_grid(*, quick: bool) -> dict[str, list]:
+    if quick:
+        return {
+            "variance_filter__threshold": [0.01, 0.05],
+            "correlation_filter__threshold": [0.9],
+            "selector__threshold": ["median", "1.25*mean"],
+            "model__C": [0.1, 1.0],
+            "model__gamma": ["scale"],
+        }
+    return {
+        "variance_filter__threshold": [0.01, 0.05],
+        "correlation_filter__threshold": [0.9, 0.8],
+        "selector__threshold": ["mean", "median", "1.25*mean", "2*mean"],
+        "model__C": [0.1, 1.0, 3.0],
+        "model__gamma": ["scale", 0.01, 0.1],
+    }
 
 
 def run_experiment(*, quick: bool = False) -> dict[str, object]:
-    """Fit and evaluate the SVM workflow with the Project 2 business score.
-
-    Set `quick=True` in notebooks for a faster smoke run (fewer k values and a
-    smaller grid). Use the default full search for final model selection.
-    """
+    """Fit and evaluate the SVM workflow with the Project 2 business score."""
 
     output_dir = _prepare_output_dir()
+    cv = 3 if quick else 5
 
     data_dir = SCRIPT_DIR.parent / "data"
     X_train, y_train, X_test = load_data(path=f"{data_dir}/")
     y_train = y_train.squeeze()
 
     base_pipeline = build_svm_pipeline(
-        variance_threshold=0.01,
-        correlation_threshold=0.9,
-        selector_c=1.0,
-        model_c=1.0,
-        kernel="rbf",
-        gamma="scale",
-        random_state=42,
-        max_iter=5000,
+        selector_threshold="median",
     )
 
     k_results = evaluate_business_score_over_k(
@@ -84,7 +79,7 @@ def run_experiment(*, quick: bool = False) -> dict[str, object]:
         X_train,
         y_train,
         _k_values(quick=quick),
-        cv=3 if quick else 5,
+        cv=cv,
         max_contacts=1000,
         positive_label=1,
         random_state=42,
@@ -94,20 +89,14 @@ def run_experiment(*, quick: bool = False) -> dict[str, object]:
     best_k_row = k_results.loc[k_results["mean_score"].idxmax()]
     best_k = int(best_k_row["k"])
 
-    # Same two-stage tuning as Logistic Regression: pick k first, then tune C.
-    param_grid = {
-        "selector__estimator__C": [0.1, 1.0] if quick else [0.1, 0.3, 1.0, 3.0],
-        "model__C": [0.1, 1.0] if quick else [0.1, 0.3, 1.0, 3.0],
-        "model__gamma": ["scale"] if quick else ["scale", 0.01, 0.1],
-    }
     grid = GridSearchCV(
         estimator=base_pipeline,
-        param_grid=param_grid,
+        param_grid=_param_grid(quick=quick),
         scoring=BusinessScorer(k=best_k, max_contacts=1000, positive_label=1),
-        cv=3 if quick else 5,
+        cv=cv,
         n_jobs=-1,
         refit=True,
-        error_score="raise",
+        error_score=np.nan,
     )
     grid.fit(X_train, y_train)
 

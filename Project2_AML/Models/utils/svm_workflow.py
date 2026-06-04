@@ -1,11 +1,9 @@
 """Project 2 SVM workflow.
 
-The preprocessing order matches Logistic Regression and the teammate notebook:
+Teammate convention:
 
-    variance filter -> correlation filter -> standardization -> SelectFromModel -> SVM
-
-The first three filters are reused from `logistic_regression_workflow.py` so both
-linear models follow the same Project 2 preprocessing convention.
+    variance filter -> correlation filter -> standardization
+    -> SelectFromModel(ExtraTreesClassifier) -> SVC
 """
 
 from __future__ import annotations
@@ -18,6 +16,7 @@ from sklearn.svm import LinearSVC, SVC
 from .logistic_regression_workflow import (
     CorrelationFilterTransformer,
     VarianceFilterTransformer,
+    make_selector_estimator,
 )
 
 
@@ -25,27 +24,17 @@ def build_svm_pipeline(
     *,
     variance_threshold: float = 0.01,
     correlation_threshold: float = 0.9,
-    selector_c: float = 1.0,
     model_c: float = 1.0,
     kernel: str = "rbf",
     gamma: str | float = "scale",
     random_state: int = 42,
     max_iter: int = 5000,
-    selector_threshold: str | float | None = None,
+    selector_threshold: str | float | None = "median",
 ) -> Pipeline:
-    """Build the leakage-safe Project 2 SVM pipeline.
+    """Build the leakage-safe Project 2 SVM pipeline."""
 
-    Notes for teammates:
-    - L1 `LinearSVC` (`dual=False`) is used inside SelectFromModel for sparse selection.
-    - The final model defaults to RBF SVC with `probability=True` so ranking works like LR.
-    - Set `kernel="linear"` for a faster linear SVM baseline.
-    - Keep all preprocessing inside this pipeline during CV to avoid leakage.
-    """
-
-    selector_estimator = LinearSVC(
-        penalty="l1",
-        dual=False,
-        C=selector_c,
+    selector_estimator = make_selector_estimator(
+        "extra_trees",
         random_state=random_state,
         max_iter=max_iter,
     )
