@@ -122,7 +122,12 @@ def get_selected_feature_names(estimator: Any, X: Any) -> list[str]:
     else:
         names = [str(index) for index in range(np.asarray(X).shape[1])]
 
-    selection_steps = {"variance_filter", "correlation_filter", "selector"}
+    selection_steps = {
+        "variance_filter",
+        "correlation_filter",
+        "kbest_prefilter",
+        "selector",
+    }
     for step_name, step in estimator.steps:
         if step_name == "model":
             break

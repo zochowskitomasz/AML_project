@@ -2,7 +2,7 @@
 
 The pipeline follows the teammate-friendly order used in the notebook:
 
-    variance filter -> correlation filter -> standardization -> SelectFromModel -> LogisticRegression
+    variance filter -> correlation filter -> standardization -> feature selection -> LogisticRegression
 
 These steps mirror `utils/data_processing.py`, but are implemented as sklearn
 transformers so the entire workflow stays inside one Pipeline and does not leak
@@ -18,16 +18,19 @@ from typing import Any, Literal
 
 import numpy as np
 import pandas as pd
-from sklearn.base import BaseEstimator, TransformerMixin
+from sklearn.base import BaseEstimator, ClassifierMixin, TransformerMixin
 from sklearn.ensemble import ExtraTreesClassifier
-from sklearn.feature_selection import SelectFromModel
+from sklearn.feature_selection import (
+    SelectFromModel,
+    SelectKBest,
+    SequentialFeatureSelector,
+    f_classif,
+)
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
-SelectorKind = Literal["l1", "extra_trees"]
-
-
+SelectorKind = Literal["l1", "extra_trees", "kbest", "sfs"]
 def make_selector_estimator(
     kind: SelectorKind,
     *,
@@ -45,9 +48,84 @@ def make_selector_estimator(
         )
 
     return LogisticRegression(
-        penalty="l1",
         solver="liblinear",
+        penalty="l1",
         C=selector_c,
+        random_state=random_state,
+        max_iter=max_iter,
+    )
+
+
+class AdaptiveLogisticRegression(BaseEstimator, ClassifierMixin):
+    """Logistic regression that picks a fast solver for L2 and saga for elastic-net."""
+
+    def __init__(
+        self,
+        *,
+        C: float = 1.0,
+        l1_ratio: float = 0.0,
+        class_weight: str | dict | None = None,
+        random_state: int = 42,
+        max_iter: int = 5000,
+    ) -> None:
+        self.C = C
+        self.l1_ratio = l1_ratio
+        self.class_weight = class_weight
+        self.random_state = random_state
+        self.max_iter = max_iter
+
+    def _build_model(self) -> LogisticRegression:
+        if self.l1_ratio and self.l1_ratio > 0:
+            return LogisticRegression(
+                solver="saga",
+                C=self.C,
+                l1_ratio=self.l1_ratio,
+                class_weight=self.class_weight,
+                random_state=self.random_state,
+                max_iter=self.max_iter,
+            )
+        return LogisticRegression(
+            solver="liblinear",
+            C=self.C,
+            l1_ratio=0.0,
+            class_weight=self.class_weight,
+            random_state=self.random_state,
+            max_iter=self.max_iter,
+        )
+
+    def fit(self, X: Any, y: Any):
+        self.model_ = self._build_model()
+        self.model_.fit(X, y)
+        self.classes_ = self.model_.classes_
+        self.n_features_in_ = self.model_.n_features_in_
+        self.coef_ = self.model_.coef_
+        self.intercept_ = self.model_.intercept_
+        return self
+
+    def predict(self, X: Any):
+        return self.model_.predict(X)
+
+    def predict_proba(self, X: Any):
+        return self.model_.predict_proba(X)
+
+    def decision_function(self, X: Any):
+        return self.model_.decision_function(X)
+
+
+def make_logistic_model(
+    *,
+    model_c: float = 1.0,
+    l1_ratio: float = 0.0,
+    class_weight: str | dict | None = None,
+    random_state: int = 42,
+    max_iter: int = 5000,
+) -> AdaptiveLogisticRegression:
+    """Build the final adaptive logistic regression classifier."""
+
+    return AdaptiveLogisticRegression(
+        C=model_c,
+        l1_ratio=l1_ratio,
+        class_weight=class_weight,
         random_state=random_state,
         max_iter=max_iter,
     )
@@ -123,6 +201,29 @@ class CorrelationFilterTransformer(BaseEstimator, TransformerMixin):
         return np.asarray(self.support_, dtype=bool)
 
 
+@dataclass
+class KBestFilterTransformer(BaseEstimator, TransformerMixin):
+    """Univariate pre-filter to shrink the search space before SFS or the final model."""
+
+    k: int = 50
+
+    def fit(self, X: Any, y: Any = None):
+        frame = _to_frame(X)
+        self.feature_names_in_ = list(frame.columns)
+        effective_k = min(int(self.k), frame.shape[1])
+        selector = SelectKBest(score_func=f_classif, k=effective_k)
+        selector.fit(frame, np.asarray(y).reshape(-1))
+        self.support_ = selector.get_support()
+        return self
+
+    def transform(self, X: Any):
+        frame = _to_frame(X)
+        return frame.loc[:, self.get_support()].copy()
+
+    def get_support(self) -> np.ndarray:
+        return np.asarray(self.support_, dtype=bool)
+
+
 def build_logistic_regression_pipeline(
     *,
     variance_threshold: float = 0.01,
@@ -130,63 +231,138 @@ def build_logistic_regression_pipeline(
     selector_kind: SelectorKind = "l1",
     selector_c: float = 1.0,
     model_c: float = 1.0,
+    model_l1_ratio: float = 0.0,
+    class_weight: str | dict | None = None,
     random_state: int = 42,
-    max_iter: int = 2000,
+    max_iter: int = 5000,
     selector_threshold: str | float | None = None,
+    kbest_k: int = 50,
+    sfs_n_features: int = 10,
+    sfs_cv: int = 3,
 ) -> Pipeline:
     """Build the leakage-safe Project 2 Logistic Regression pipeline.
 
-    Notes for teammates:
-    - `selector_kind="l1"`: SelectFromModel with L1 LogisticRegression (liblinear).
-    - `selector_kind="extra_trees"`: SelectFromModel with ExtraTreesClassifier.
-    - Use stricter `selector_threshold` values (e.g. "median", "1.25*mean") to keep
-      NoVariables low for the business score.
+    Selector options:
+    - `l1`: SelectFromModel with L1 LogisticRegression (liblinear).
+    - `extra_trees`: SelectFromModel with ExtraTreesClassifier.
+    - `kbest`: SelectKBest with ANOVA F-test.
+    - `sfs`: KBest pre-filter followed by forward SequentialFeatureSelector.
     """
 
-    selector_estimator = make_selector_estimator(
-        selector_kind,
-        selector_c=selector_c,
+    final_model = make_logistic_model(
+        model_c=model_c,
+        l1_ratio=model_l1_ratio,
+        class_weight=class_weight,
         random_state=random_state,
         max_iter=max_iter,
     )
 
-    final_model = LogisticRegression(
-        penalty="l2",
-        solver="liblinear",
-        C=model_c,
-        random_state=random_state,
-        max_iter=max_iter,
-    )
+    steps: list[tuple[str, Any]] = [
+        ("variance_filter", VarianceFilterTransformer(threshold=variance_threshold)),
+        (
+            "correlation_filter",
+            CorrelationFilterTransformer(threshold=correlation_threshold),
+        ),
+        ("scaler", StandardScaler()),
+    ]
 
-    return Pipeline(
-        steps=[
-            (
-                "variance_filter",
-                VarianceFilterTransformer(threshold=variance_threshold),
-            ),
-            (
-                "correlation_filter",
-                CorrelationFilterTransformer(threshold=correlation_threshold),
-            ),
-            # Standardization is placed inside the pipeline so each CV fold fits it only on training data.
-            ("scaler", StandardScaler()),
-            # L1 logistic gives a sparse selector that is easy to interpret and aligns with the project codebase.
+    if selector_kind == "kbest":
+        steps.append(("selector", KBestFilterTransformer(k=kbest_k)))
+    elif selector_kind == "sfs":
+        sfs_estimator = make_logistic_model(
+            model_c=1.0,
+            l1_ratio=0.0,
+            random_state=random_state,
+            max_iter=max_iter,
+        )
+        steps.extend(
+            [
+                ("kbest_prefilter", KBestFilterTransformer(k=kbest_k)),
+                (
+                    "selector",
+                    SequentialFeatureSelector(
+                        estimator=sfs_estimator,
+                        n_features_to_select=sfs_n_features,
+                        direction="forward",
+                        scoring="roc_auc",
+                        cv=sfs_cv,
+                        n_jobs=1,
+                    ),
+                ),
+            ]
+        )
+    else:
+        selector_estimator = make_selector_estimator(
+            selector_kind,
+            selector_c=selector_c,
+            random_state=random_state,
+            max_iter=max_iter,
+        )
+        steps.append(
             (
                 "selector",
                 SelectFromModel(
                     estimator=selector_estimator,
                     threshold=selector_threshold,
                 ),
-            ),
-            ("model", final_model),
-        ]
-    )
+            )
+        )
+
+    steps.append(("model", final_model))
+    return Pipeline(steps=steps)
+
+
+def get_model_coefficients(pipeline: Pipeline) -> np.ndarray:
+    """Return absolute coefficients from the fitted final logistic model."""
+
+    if not isinstance(pipeline, Pipeline):
+        raise ValueError("Expected a fitted sklearn Pipeline.")
+
+    model = pipeline.named_steps["model"]
+    if not hasattr(model, "coef_"):
+        raise ValueError("Final model does not expose coef_.")
+
+    coefficients = np.asarray(model.coef_, dtype=float).reshape(-1)
+    return np.abs(coefficients)
+
+
+def feature_dominance_ratio(pipeline: Pipeline) -> float:
+    """Share of total coefficient mass attributed to the single strongest feature."""
+
+    coefficients = get_model_coefficients(pipeline)
+    total = float(coefficients.sum())
+    if total <= 0:
+        return 1.0
+    return float(coefficients.max() / total)
+
+
+def passes_feature_diversity_check(
+    pipeline: Pipeline,
+    *,
+    min_features: int = 3,
+    max_dominance_ratio: float = 0.65,
+    X: Any | None = None,
+) -> bool:
+    """Reject models that rely on too few features or one dominant coefficient."""
+
+    from utils.business_scoring import infer_n_variables
+
+    n_features = infer_n_variables(pipeline, X=X)
+    if n_features < min_features:
+        return False
+    return feature_dominance_ratio(pipeline) <= max_dominance_ratio
 
 
 __all__ = [
     "CorrelationFilterTransformer",
+    "KBestFilterTransformer",
+    "AdaptiveLogisticRegression",
     "SelectorKind",
     "VarianceFilterTransformer",
     "build_logistic_regression_pipeline",
+    "feature_dominance_ratio",
+    "get_model_coefficients",
+    "make_logistic_model",
     "make_selector_estimator",
+    "passes_feature_diversity_check",
 ]

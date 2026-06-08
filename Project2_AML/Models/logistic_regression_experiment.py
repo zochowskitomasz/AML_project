@@ -18,7 +18,7 @@ from logistic_regression_business_experiment import run_experiment  # noqa: E402
 
 
 def main() -> None:
-    summary = run_experiment()
+    summary = run_experiment(fast=True)
     print(f"best_k={summary['best_k']}")
     print(f"best_cv_score={summary['best_cv_business_score']}")
     print(f"n_variables={summary['n_variables']}")
