@@ -1,0 +1,88 @@
+\documentclass{article}
+\usepackage[english]{babel}
+\usepackage{xcolor}
+\usepackage{graphicx}
+
+\title{Advanced Machine Learning\\Report 2}
+
+\author{Mohammed Zaid Shaikh\\Jan Wyrzykowski\\Tomasz Żochowski}
+
+\begin{document}
+
+\maketitle
+\tableofcontents
+\newpage
+
+\section{Introduction}
+
+In data analysis, especially in business environment, the task of feature selection is crucial. After all, data collection and storage requires resources, so choosing only the most important information saves money. Fortunately, there are many machine learning techniques that aid in this task.
+
+In this project, we analyze different approaches to feature selection in order to maximize the following score function:
+
+$$S = 10 \cdot \mathrm{TP} - 5 \cdot \mathrm{FP} - 200 \cdot \mathrm{n\_var}.$$
+
+\textcolor{red}{add something here maybe? right now it's bare}
+
+\section{Approach}
+
+Our methodology can be split into two distinct parts: early feature selection and prediction.
+
+\subsection{Feature selection}
+
+\subsubsection{Variance thresholding}
+
+Function \verb|variance_threshold| removes features that have lower variance than the set threshold -- these variables have weak predictive power and, as a result, will only bring the score down.
+
+Since this function is used at early stages of feature selection, we use a conservative threshold in order not to accidentally remove useful variables.
+
+\subsubsection{Correlation filtering}
+
+Function \verb|correlation_filter| calculates the correlation matrix of the design matrix. Then, if the correlation between two columns is higher than a set threshold, one of the columns (the latter one) is removed. This way, we remove reduntant variables and add stability to some models.
+
+Just like \verb|variance_threshold|, this function is used early in the pipeline, and so the threshold itself should be quite high.
+
+\subsubsection{Importance-based selection}
+
+The next step is \verb|select_from_model|, which at its core uses \verb|sklearn|'s class \verb|SelectFromModel|. This function fits a chosen model (in our case, either ExtraTreesClassifier or LogisticRegression with L1 regularization), extracts feature importances, and selects variables deemed most important.
+
+This method also accepts a threshold. In case of \verb|ExtraTreesClassifier| it can be a non-negative real number, a multiple of the mean, or a multiple of the median; we decided on mainly using a multiple of the mean. For L1 \verb|LogisticRegression|, the typical threshold is a low real number, e.g. $10^{-5}$ -- it serves as a margin of computational error, since Lasso shrinks feature importances to zero.
+
+\subsubsection{Statistical-based selection}
+
+We also implemeneted \verb|select_k_best|, an alternative to \verb|select_from_model|. It is also based on \verb|sklearn|'s class, namely \verb|SelectKBest|. The goal of this function is to perform a statistical test (ANOVA by default) and return $k$ features that achieved the best scores.
+
+\subsubsection{Variance Inflation Factor}
+
+We have also implemented \verb|variance_inflation_factor|, which used VIF to remove columns iteratively. However, we quickly realized that it's ineffective when faced with that many features, so we ended up not using it.
+
+\subsection{Prediction}
+
+When it comes to prediction, we used a few different classifiers to compare their performance and pick the best one.
+
+\subsubsection{Logistic Regression}
+
+Possibly the simplest classifier we could have chosen, but nevertheless a powerful one. Aside from feature selection methods described above, it uses standarized data because of L2 standarization used inside it.
+
+\subsubsection{SVM}
+
+The second classifier we use is SVM -- linear and kernel version. In case of the latter, our kernel of choice is \verb|rbf|. Just like in case of logistic regression, standarization is used, but for a different reason -- SVM is based on distances, and standarization unifies them across features.
+
+\subsubsection{Random Forest}
+
+Random Forest is a good option, especially for capturing non-linear relationships in data. We wanted to test it in this task using various hyperparameter settings to ensure that no overfitting happens.
+
+\subsubsection{XGBoost}
+
+XGBoost is one of the best machine learning tools based on decision trees. We were certain it will achieve top scores and wanted to test it thoroughly. 
+
+\subsubsection{Combining the methods}
+
+\textcolor{red}{something about how we use gridsearch, random search, cross-validation and such}
+
+\section{Results}
+
+\textcolor{red}{make sure to describe the pipeline for result reproduction}
+
+\section{Conclusions}
+
+\end{document}
