@@ -17,17 +17,23 @@
 
 In data analysis, especially in business environment, the task of feature selection is crucial. After all, data collection and storage requires resources, so choosing only the most important information saves money. Fortunately, there are many machine learning techniques that aid in this task.
 
-In this project, we analyze different approaches to feature selection in order to maximize the following score function:
+In this project, we analyze different approaches to feature selection in order to maximize the following profit function:
 
 $$S = 10 \cdot \mathrm{TP} - 5 \cdot \mathrm{FP} - 200 \cdot \mathrm{n\_var}.$$
 
-\textcolor{red}{add something here maybe? right now it's bare}
+% \textcolor{red}{add something here maybe? right now it's bare}
+As we can see, it has quite a strong penalty on the number of features selected. Additionally, the 
+dataset we've been provided with has an astonishing 500 features. This means that we had to perform some surgical-precision feature selection
+along with training a highly-percise model for the aforementioned task. Below, we delve into our approach.
 
 \section{Approach}
 
-Our methodology can be split into two distinct parts: early feature selection and prediction.
+Our methodology can be split into two main parts: early feature selection and prediction.
 
 \subsection{Feature selection}
+
+During this task, we've decided to proceed sequentially, cutting off features step by step, starting from the most egregious outliers, down to more delicate selection.
+
 
 \subsubsection{Variance thresholding}
 
@@ -57,11 +63,11 @@ We have also implemented \verb|variance_inflation_factor|, which used VIF to rem
 
 \subsection{Prediction}
 
-When it comes to prediction, we used a few different classifiers to compare their performance and pick the best one.
+When it came to making predictions, we used a few different classifiers to compare their performance and pick the best one, or possibly even an ensemble.
 
 \subsubsection{Logistic Regression}
 
-Possibly the simplest classifier we could have chosen, but nevertheless a powerful one. Aside from feature selection methods described above, it uses standarized data in order to make regularization equal across all variables.
+Probably the simplest classifier we could have chosen, but nevertheless a powerful one. Aside from feature selection methods described above, it uses standarized data in order to make regularization equal across all variables.
 
 \subsubsection{SVM}
 
@@ -99,8 +105,24 @@ This set of steps proved to be both quite simple to implement and the most effec
 
 \section{Results}
 
-After implementing the pipeline described above for 
+After implementing the pipeline described above for all of the models, LogReg and XGBoost quickly have shown themselves to be clear leaders. 
+After more thorough examination and a few additinal tweaks and fine-tuning, XGBoost ended up being the clear winner between the two. 
+
+The task was difficult, especially the cost of adding a single feature was difficult to balance with how little information it could give sometimes. 
+Nevertheless, we ended up choosing a fine-tuned XGBoost trained on a bootstrapped test sample, with the number of features being four. 
+
+These features are: \verb|VX, VY, VZ, VQ|.
 
 \section{Conclusions}
 
+The presented project was informative and challenging. The score function provided penalized features heavily, forcing us to perform a strict feature selection, and
+then to highly fine-tune our model to extract as much information from the pre-selected features as it can.
+
+If we had any more time, we'd explore more ways to tie feature selection to our best model. Perform a sort of circular \verb|XGBoost -> Feature -> XGBoost| pipeline in order to slowly, sequentially remove features while keeping information. 
+
+Given more resources, we could've tried approaching the problem using some methods built on top of artificial neural networks, which can sometimes make the smallest amount of data work wonders.
+One thing we could do as well is an ensemble of best models. However our limited tests
+did not show ensembles to provide significantly better results than a single XGBoost. 
+
+Both our final model and feature selection pipeline are far from ideal, but we believe them to be at least somewhat robust and a result of thorough work.
 \end{document}
