@@ -152,7 +152,6 @@ def select_from_model(X_train: pd.DataFrame, y_train: pd.Series | pd.DataFrame, 
     selector = SelectFromModel(estimator, threshold=threshold)
     selector.fit(X_train, y_train)
     mask = selector.get_support()
-    print(mask)
 
     return X_train.loc[:, mask], X_test.loc[:, mask]
 
