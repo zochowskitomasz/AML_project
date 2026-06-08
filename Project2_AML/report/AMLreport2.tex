@@ -61,7 +61,7 @@ When it comes to prediction, we used a few different classifiers to compare thei
 
 \subsubsection{Logistic Regression}
 
-Possibly the simplest classifier we could have chosen, but nevertheless a powerful one. Aside from feature selection methods described above, it uses standarized data because of L2 standarization used inside it.
+Possibly the simplest classifier we could have chosen, but nevertheless a powerful one. Aside from feature selection methods described above, it uses standarized data in order to make regularization equal across all variables.
 
 \subsubsection{SVM}
 
@@ -77,11 +77,29 @@ XGBoost is one of the best machine learning tools based on decision trees. We we
 
 \subsubsection{Combining the methods}
 
-\textcolor{red}{something about how we use gridsearch, random search, cross-validation and such}
+Our main pipeline has the following form:
+
+\begin{enumerate}
+    \item Load data.
+    \item Apply feature selection techniques:
+    \begin{itemize}
+        \item variance filter,
+        \item correlation threshold,
+        \item model-based selection (with a threshold or top $k$ results)
+    \end{itemize}
+    \item If the method used is logistic regression or SVM, standarize data.
+    \item Split data into train and test samples. In order to obtain a realistic final score, the test sample is used to select $5000$ bootstrap test observations.
+    \item Run a cross-validated grid search or a random search and pick the model that maximizes the score.
+    \item Calculate the test score (on the bootstrapped sample).
+\end{enumerate}
+
+Steps $3$-$6$ are repeated for different model-based selection thresholds in order to find the optimal number of variables used in the model.
+
+This set of steps proved to be both quite simple to implement and the most effective.
 
 \section{Results}
 
-\textcolor{red}{make sure to describe the pipeline for result reproduction}
+After implementing the pipeline described above for 
 
 \section{Conclusions}
 
